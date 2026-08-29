@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import NoReturn, Optional
 import datetime
 import typer
 from pathlib import Path
@@ -1399,18 +1399,21 @@ def advise(
     from tradingagents.advisor.scenario_io import ScenarioNotFoundError, load_scenario
     from tradingagents.advisor.types import AdvisorConfig, InvestorVector, KYCAnswers
 
-    def _emit(payload: dict, exit_code: int) -> None:
+    def _emit(payload: dict, exit_code: int) -> NoReturn:
         if json_out:
             console.print_json(_json.dumps(payload, ensure_ascii=False))
         else:
             console.print(payload)
         raise typer.Exit(code=exit_code)
 
+    if kyc_json is not None and assume_neutral:
+        console.print("[red]--kyc-json 与 --assume-neutral 互斥[/red]")
+        raise typer.Exit(code=5)
+
     try:
         artifact = load_scenario(ticker, date=date)
     except ScenarioNotFoundError as e:
         _emit({"error": "not_found", "message": str(e)}, exit_code=1)
-        return
 
     if kyc_json is not None:
         try:
@@ -1421,12 +1424,10 @@ def advise(
                 "message": "KYC 答案 schema 违例",
                 "details": _json.loads(e.json()),
             }, exit_code=2)
-            return
         try:
             vector = from_kyc(answers)
         except Exception as e:
             _emit({"error": "internal", "message": str(e)}, exit_code=4)
-            return
     elif assume_neutral:
         vector = InvestorVector(gamma_eff=5.0, hc=0.7, h_avail_months=60.0)
     else:
@@ -1438,12 +1439,10 @@ def advise(
                 "message": "需要先建立投资者画像（5 题问卷）；或用 --kyc-json / --assume-neutral",
                 "questionnaire": get_questionnaire().model_dump(),
             }, exit_code=3)
-            return
         try:
             vector = from_kyc(answers)
         except Exception as e:
             _emit({"error": "internal", "message": str(e)}, exit_code=4)
-            return
 
     bucket = artifact.scenario_buckets[0]
     result = _advise(

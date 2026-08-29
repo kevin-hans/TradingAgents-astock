@@ -70,14 +70,14 @@ class TestAdviseJSON:
     def test_missing_scenario_returns_not_found(self, tmp_env):
         _write_profile(tmp_env)
         r = _run(tmp_env, "advise", "999999", "--json")
-        assert r.returncode != 0
+        assert r.returncode == 1
         payload = json.loads(r.stdout)
         assert payload["error"] == "not_found"
 
     def test_missing_profile_returns_kyc_required(self, tmp_env):
         _write_scenario(tmp_env)
         r = _run(tmp_env, "advise", "000001", "--json")
-        assert r.returncode != 0
+        assert r.returncode == 3
         payload = json.loads(r.stdout)
         assert payload["error"] == "kyc_required"
         assert "questionnaire" in payload
@@ -94,7 +94,7 @@ class TestAdviseJSON:
     def test_invalid_kyc_json(self, tmp_env):
         _write_scenario(tmp_env)
         r = _run(tmp_env, "advise", "000001", "--json", "--kyc-json", '{"q1": 4}')
-        assert r.returncode != 0
+        assert r.returncode == 2
         payload = json.loads(r.stdout)
         assert payload["error"] == "invalid_kyc"
 
@@ -104,6 +104,13 @@ class TestAdviseJSON:
         assert r.returncode == 0, f"stderr={r.stderr}\nstdout={r.stdout}"
         payload = json.loads(r.stdout)
         assert payload["ticker"] == "000001"
+
+    def test_kyc_json_and_assume_neutral_mutually_exclusive(self, tmp_env):
+        _write_scenario(tmp_env)
+        r = _run(tmp_env, "advise", "000001", "--json",
+                 "--kyc-json", '{"q1":7,"q2":7,"q3":7,"q4":7,"q5":7}',
+                 "--assume-neutral")
+        assert r.returncode == 5
 
     def test_specific_date(self, tmp_env):
         _write_profile(tmp_env)
