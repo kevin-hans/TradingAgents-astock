@@ -31,9 +31,11 @@ PicoClaw 只做发单和展示**——天然是 MCP client/server 分工。
 |---|---|---|
 | a-stock-data 已经是"MCP 服务" | 实际是 Claude Code Skill（SKILL.md + 内嵌 Python），无 MCP server 代码 | **推翻**：a-stock-data 挂工具需先给它加 MCP server 皮 + 网络传输，工作量远超预期 |
 | mcp SDK 依赖 httpx≥0.27，与 mootdx httpx<0.26 冲突 | mcp v2.1.1 已迁移到 **httpx2**（httpx 的独立 fork），不碰 httpx；本仓库 pyproject.toml 就有注释确认此事（`[agentsdk]` extra 通过 claude-agent-sdk → mcp → httpx2 已实测 uv lock 可锁） | **推翻**：本仓库放 MCP 依赖不再有依赖冲突 |
-| MCP 层需与主仓解耦以防依赖蔓延 | 本仓库内 MCP 薄壳 import advisor 引擎函数属于同 package 下游依赖，正常层次；且 P2 引擎本就是纯函数无副作用 | **保留原则但形式改变**：解耦通过"MCP 层只暴露引擎已有函数、无独立业务逻辑"实现，不必物理隔离 |
+| MCP 层需与主仓解耦以防依赖蔓延 | MCP 层通过 subprocess 调 CLI（B1 形态），进程边界物理隔绝 MCP 层从业务模块 import 的可能性 | **通过 subprocess 形态获得更强的隔离**：MCP 层零业务代码，违规几乎不可能"顺手发生" |
 
-新落点：**本仓库 `tradingagents/mcp/` 子包，作为 `[mcp]` extra，直接 import P2 引擎**。
+新落点：**本仓库 `tradingagents/mcp/` 子包，作为 `[mcp]` extra**。
+形态选择：**B1 subprocess 调 CLI**——遵守项目级"MCP 薄壳方针"（§3 不变量），
+物理边界保证 MCP 层无业务逻辑漂移。
 
 ## 3. 架构总览
 
@@ -47,20 +49,27 @@ Go Agent (10MB RAM)                  TradingAgents (Python)
   ├─ 定时/调度 (自带)                    │
   ├─ 推送 channels (自带)                └─ tradingagents/mcp/ (本 spec)
   │                                          - MCP server 薄壳
-  └─ MCP client                             - 直接 import advisor 引擎
-       │                                    - 直接 import CLI 内部函数（analyze 触发）
+  └─ MCP client                             - subprocess 调 CLI 命令（B1 薄壳）
+       │                                    - MCP 层零业务代码
        │  MCP over HTTP/SSE                 - 暴露 6 个工具
        └──────────────────────────►         - 启动: tradingagents mcp-serve
 ```
 
 **不变量：**
 
-- MCP 薄壳零业务逻辑：`advise` 工具 = 调 `advisor.engine.advise()`，`scenario` 工具
-  = 读盘上的 `scenario_<ticker>_<date>.json`。任何"MCP 独有"的逻辑视为设计违规。
-- 引擎是唯一计算入口（同 spec §7）：MCP 层与 CLI 层是**平级**的两张嘴，都调同一
-  个引擎函数。CLI 依然是人工与外部脚本的机器接口，MCP 是 AI 客户端的接口。
-- 消费端只读原则（同 spec §7）：`advise` / `scenario` / `review` / `reports` 秒级
-  返回，永不触发研究。`analyze` 是唯一触发重研究的工具，**必须显式 confirm 才执行**。
+- **MCP 薄壳方针（TradingAgents 项目级）**：MCP server 不得承担业务逻辑。所有
+  "重处理"——analyze 管线调度、artifact 管理与归档、同日守卫、advisor 引擎调用、
+  KYC 校准、错误分类——**必须住在 CLI 命令实现里**。MCP 层职责严格限定于：入参
+  解析、出参 JSON 化、错误码映射、调 CLI。**新增 MCP 工具的判定标准：必须能一
+  句话说清"就是把哪个 CLI 命令包了一层"**；若必要逻辑 CLI 里没有，先在 CLI 里加
+  然后 MCP 调用，不允许"在 MCP 层顺手加个功能"。这条方针优先级高于减少 subprocess
+  开销等性能考量。
+- CLI 是唯一功能载体：MCP 不是与 CLI 平级的第二张业务嘴，而是 CLI 的薄外壳。
+  CLI 依然是人工、外部脚本、其它自动化的机器接口；MCP 只是让 AI 客户端能以 tool
+  call 形式触发同一批 CLI 命令。
+- 消费端只读原则（同 scenario-vector-advisor spec §7）：`advise` / `scenario` /
+  `review` / `reports` / `kyc_questionnaire` 秒级返回，永不触发研究。`analyze`
+  是唯一触发重研究的工具，**必须显式 confirm 才执行**。
 - 单一真相源（KYC 校准）：投资者向量的 γ_eff / HC / H_avail 公式只在 Python 端
   `advisor/calibrate.py` 存在；所有 MCP 客户端只发原始 KYC 答案，不复刻公式。
 - 服务端无用户会话状态：MCP 层不持有 profile.json（与 CLI 层可选持有解耦）；
@@ -75,8 +84,9 @@ Go Agent (10MB RAM)                  TradingAgents (Python)
 
 **`reports(ticker: str | None = None) -> list[ReportEntry]`**
 
-列出可用研报。可选 ticker 过滤。实现直接扫 `~/.tradingagents/reports/` 目录（复用
-CLI reports 的扫描逻辑）。
+列出可用研报。可选 ticker 过滤。MCP 层 subprocess 调 `tradingagents reports --json`；
+CLI 侧扫 `~/.tradingagents/reports/` 目录（复用现有 P2/P3 里 CLI reports 命令的
+实现）。
 
 ```python
 class ReportEntry(BaseModel):
@@ -96,17 +106,25 @@ spec §4.1）。
 
 **`advise(ticker: str, kyc_answers: KYCAnswers, date: str | None = None) -> AdviceResult`**
 
-核心工具。MCP 层动作：
+核心工具。MCP 层动作（**subprocess 调 CLI，遵守 §3 薄壳方针**）：
 
 ```python
 async def advise(ticker, kyc_answers, date=None):
-    scenario = load_scenario(ticker, date)            # 磁盘读小 JSON
-    if scenario is None:
-        raise ToolError("not_found", "先跑 analyze 或换一个日期")
-    vector = advisor.calibrate.from_kyc(kyc_answers)  # 单一真相源
-    result = advisor.engine.advise(scenario, vector)  # 纯函数
-    return result.to_dict()                           # 含完整 trace
+    argv = ["tradingagents", "advise", ticker, "--json",
+            "--kyc-json", json.dumps(kyc_answers.model_dump())]
+    if date is not None:
+        argv += ["--date", date]
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdout=PIPE, stderr=PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise map_cli_error(proc.returncode, stderr)  # 错误码映射
+    return json.loads(stdout)                          # 原样透传 CLI JSON
 ```
+
+所有实际业务（磁盘读 scenario、KYC 校准、引擎调用、错误分类）住在
+`tradingagents advise --json` 命令实现里。MCP 层只做进程调度 + 错误码映射。
 
 **`review(kyc_answers: KYCAnswers) -> ReviewReport`**
 
@@ -240,8 +258,9 @@ class KYCAnswers(BaseModel):
     schema_version: Literal[1] = 1
 ```
 
-**服务端**：`advisor.calibrate.from_kyc(kyc_answers)` 现场算 γ / HC / H_avail
-（spec §5 公式），传给引擎。
+**服务端**：CLI 命令实现（`tradingagents advise --json --kyc-json ...`）内部调
+`advisor.calibrate.from_kyc(kyc_answers)` 现场算 γ / HC / H_avail（spec §5 公式），
+传给引擎。**MCP 层不接触校准函数**——只 subprocess 调 CLI 并转发结果（§3 薄壳方针）。
 
 **为什么发原始答案而非算好的向量：**
 
@@ -305,7 +324,9 @@ PicoClaw LLM: 调 analyze("000001", confirm=true) → 阻塞等 → 拿到报告
 - `full`：读历史近 N 次 `full_states_log` 的实际调用数与时长取中位数，缺历史用
   保守默认（60 次 / 10 分钟）
 
-估算函数 `advisor.estimate.estimate_analyze(ticker, date, depth)` 纯计算，秒级返回。
+报价由 CLI 命令 `tradingagents analyze <ticker> --json --depth <d>`（不带 `--confirm`）
+输出——两相 confirm 语义、报价计算、同日守卫全部住在 CLI 里。MCP 层 subprocess
+调 CLI 时透传 `confirm` 参数，不做任何本地判断。
 
 **同日守卫**：`analyze(..., confirm=true)` 在真正执行前**同样调 P2 §7 已有的同日
 守卫**（存在制品则拒绝除非再传 `force=True`）。这一层不是 MCP 独有，是 CLI 层已有
@@ -380,9 +401,13 @@ tradingagents/
 ├── mcp/
 │   ├── __init__.py
 │   ├── server.py       # MCP server 启动、工具挂载
-│   ├── tools.py        # 6 个工具的 pydantic schema + 实现
-│   └── estimate.py     # analyze 报价函数
+│   ├── tools.py        # 6 个工具的 pydantic schema + subprocess 调用
+│   └── errors.py       # CLI exit code / stderr → MCP 错误码映射表
 ```
+
+**注意**：`tradingagents/mcp/` 下**不得** import advisor / graph / dataflows 等业务模块
+（§3 薄壳方针的物理保证——B1 subprocess 形态选择的直接体现）。若发现有此类
+import 出现，属于设计违规，必须回退到 CLI subprocess 形式。
 
 ### 8.3 CLI 入口
 
@@ -401,6 +426,27 @@ def mcp_serve(
 
 回调 `@app.callback(invoke_without_command=True)` 保持——CLAUDE.md 明规裸跑不能坏。
 
+### 8.4 CLI 侧前置需求（承接薄壳方针）
+
+MCP 6 个工具全部通过 subprocess 调 CLI，所以 CLI 必须先具备以下能力（P2 已规划
+了大部分，本 spec 列出的是 MCP 集成要求的完整清单）：
+
+| CLI 命令 | 必需能力 | 状态 |
+|---|---|---|
+| `tradingagents advise <ticker> --json --kyc-json <json> [--date <d>]` | 出 JSON + inline 接 KYC（覆盖 `~/.tradingagents/profile.json` 的原方案） | P2 规划 + 本 spec 追加 `--kyc-json` |
+| `tradingagents scenario <ticker> --json [--date <d>]` | 出 JSON | P2 规划 |
+| `tradingagents review --json --kyc-json <json>` | 出 JSON + inline 接 KYC | P3 规划 + 本 spec 追加 `--kyc-json` |
+| `tradingagents reports --json [--ticker <t>]` | 出 JSON | 新增 |
+| `tradingagents kyc-questionnaire --json` | 出 JSON（就是 `advisor/calibrate.py` 里问卷元数据的序列化） | 新增 |
+| `tradingagents analyze <ticker> --json --depth <d> [--confirm] [--force] [--single-analyst <role>]` | 出 JSON + 两相 confirm 语义 + 同日守卫 + 报价模式 | 大部分已有；本 spec 追加 `--json` + `--confirm` + 报价模式 |
+
+**所有 CLI 命令的 `--json` 输出使用统一 schema 契约**（错误对象有固定字段
+`error / message / details`，成功对象由各命令定义），MCP `errors.py` 依此映射到
+MCP 层错误码。契约版本随 spec 走：加字段=minor，改语义=version bump。
+
+**CLI 命令的所有加子命令都必须过 `tests/test_cli_default_command.py`**——CLAUDE.md
+v0.5.9 教训：裸跑 `tradingagents` 不能坏。
+
 ## 9. 错误处理与降级矩阵
 
 | 层 | 故障 | 处理 |
@@ -416,7 +462,7 @@ def mcp_serve(
 | 工具 | `analyze` 中途 LLM provider 挂 | 返回错误 + 已完成节点数；无残缺制品（CLI 原子写） |
 | 工具 | `analyze` 同日已有制品且未 force | 返回 `artifact_exists`，附现有 artifact_path |
 | 服务端 | `mcp-serve` 端口占用 | 快速失败，明确报错 |
-| 服务端 | 引擎依赖未装（P2 未交付） | 启动时 import 失败，明确提示"需先完成 P2" |
+| 服务端 | CLI 命令未实现（P2 未交付） | MCP 工具调 CLI 返回非零 exit + `not_implemented` 错误，明确提示"CLI 需先完成 P2 分期" |
 
 **核心原则**：所有错误必须**结构化**（错误码 + 描述 + 提示动作），供 PicoClaw 的
 LLM 理解并向用户解释——不能返回堆栈或裸文本。
@@ -425,11 +471,13 @@ LLM 理解并向用户解释——不能返回堆栈或裸文本。
 
 | 层 | 内容 |
 |---|---|
-| 工具单测（mock 引擎） | 每个工具的成功路径 + 错误路径全覆盖；schema 契约（新增字段=minor，改语义=version bump） |
-| KYC 校验测试 | 边界值（q1=3/5/7/9 全枚举）+ 违例（q1=0 / q1=None / 缺字段）；确认 pydantic 拦截 |
-| KYC 建档流程测试 | `advise` / `review` 缺参数触发 `kyc_required` + 内嵌问卷；违例触发 `invalid_kyc` **不**下发问卷；`kyc_questionnaire()` 独立工具返回 schema 等价于错误内嵌 payload（防两处漂移） |
-| `analyze` 两相测试 | `confirm=false` 只返报价不跑；`confirm=true` 才真跑；同日守卫触发 |
-| MCP 服务器集成测试 | 用 mcp SDK 的 test client 跑起 server → 发现 6 个工具 → 调用一遍 |
+| CLI JSON 契约测试 | 每个 CLI 命令的 `--json` 输出 schema 快照（成功 + 各错误场景）；这是 MCP 层的**契约来源**，先于 MCP 工具测试建立 |
+| MCP 工具单测（mock subprocess） | 每个 MCP 工具的成功路径 + 错误路径：mock `asyncio.create_subprocess_exec` 返回预制 stdout/stderr/exit code，断言 MCP 层正确透传 JSON + 正确映射错误码 |
+| MCP 层零业务代码校验（薄壳方针的守卫测试） | 静态检查 `tradingagents/mcp/**/*.py` 不 import `tradingagents.advisor` / `tradingagents.graph` / `tradingagents.dataflows` 等业务模块；一旦出现视为设计违规，测试红 |
+| KYC 校验测试（CLI 层） | 边界值（q1=3/5/7/9 全枚举）+ 违例（q1=0 / q1=None / 缺字段）；确认 CLI `--kyc-json` 解析层拦截 |
+| KYC 建档流程测试（CLI 层） | `advise` / `review` 缺 `--kyc-json` 时 CLI 返回 `kyc_required` + 内嵌问卷；违例返 `invalid_kyc` **不**下发问卷；`kyc-questionnaire` 独立命令返回 schema 等价于错误内嵌 payload（防两处漂移） |
+| `analyze` 两相测试（CLI 层） | CLI 侧 `--confirm` 缺省只返报价不跑；带 `--confirm` 才真跑；同日守卫触发 |
+| MCP 服务器集成测试 | 用 mcp SDK 的 test client 跑起 server → 发现 6 个工具 → 调用一遍（后端可 mock 掉真 CLI 用 stub 二进制加速） |
 | CLI 兼容 | `test_cli_default_command`（裸跑不能坏）；`mcp-serve` 子命令 --help 输出稳定 |
 | Extra 隔离测试 | 干净 venv 不装 `[mcp]` → `pip install -e .` 成功 → 全量测试保持当前 baseline 不变（P1 后为 425 passed / 0 failed，CLAUDE.md 干净 clone 场景为 361）；`import tradingagents.mcp` 应 raise 清晰 ImportError |
 | 端到端（可选，标 `slow`） | 起真实 server + 用真实 PicoClaw / MCP inspector 调 `advise` 端到端跑通 |
@@ -442,9 +490,13 @@ LLM 理解并向用户解释——不能返回堆栈或裸文本。
 | M2 | `analyze` 工具（含估算 + 两相 confirm） | 完整触发闭环，PicoClaw 能下单新分析 |
 | M3 | 端到端联调 + PicoClaw skill 注册文档 | 交付使用 |
 
-**前置条件**：M1 依赖情景向量顾问 spec 的 P2 分期（advisor 引擎 + CLI
-advise/review/scenario/reports 的 `--json`）已完成。若 P2 尚未开工，本 spec 转为
-**并行开发**——先出接口契约（工具 schema），M1 实施时对接 P2 完成的实际引擎。
+**前置条件**：M1 依赖情景向量顾问 spec 的 P2 分期 + 本 spec §8.4 列出的 CLI 命令
+清单全部就位（含 `--json` / `--kyc-json` / `kyc-questionnaire` / `reports` /
+`analyze --confirm` 两相语义等）。若 P2 尚未开工，本 spec 转为**并行开发**——先
+出接口契约（CLI JSON schema + MCP 工具 schema），M1 实施时对接 P2 完成的实际 CLI
+命令。**注意**：本 spec 的 §8.4 追加了几个原 P2 没规划的 CLI 参数（`--kyc-json`
+inline 支持、`--confirm` 两相、`kyc-questionnaire` 子命令），P2 实施时需一并纳入
+或本 spec 的 M1 前置一并追加。
 
 ## 12. 明确不做（YAGNI）
 
