@@ -2,6 +2,8 @@
 
 单一真相源：所有客户端都发原始 KYC 答案；校准公式只住这里。
 """
+from typing import Literal
+
 from tradingagents.advisor.questionnaire import (
     KYC_Q2_MONTHS,
     KYC_Q4_INCOME_STABILITY,
@@ -43,7 +45,7 @@ def from_kyc(answers: KYCAnswers) -> InvestorVector:
     )
 
 
-def gamma_to_C(gamma: float) -> str:
+def gamma_to_C(gamma: float) -> Literal["C1", "C3", "C4", "C5"]:
     """γ → C1-C5 兼容锚点（spec §5）。
 
     γ≥7.5→C1/C2、5–7.5→C3、3–5→C4、<3→C5。

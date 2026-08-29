@@ -24,7 +24,7 @@ class TestFromKYC:
         # avg = 3.4, γ = clip(11 - 3.4, 1.5, 9.5) = 7.6
         # age = 52, HC = clamp(1 - (52-25)/50, 0, 1) × 0.3 = 0.46 × 0.3 = 0.138
         # γ_eff = 7.6 × (1 + 0.5 × 0.862) = 7.6 × 1.431 = 10.8756
-        assert v.gamma_eff == pytest.approx(10.8756, rel=1e-3)
+        assert v.gamma_eff == pytest.approx(10.8756, rel=1e-6)
         # H_avail = min(3, (65-52)*12) = min(3, 156) = 3
         assert v.h_avail_months == pytest.approx(3.0)
 
@@ -53,8 +53,8 @@ class TestFromKYC:
 
 class TestGammaToC:
     def test_gamma_c1_c2(self):
-        assert gamma_to_C(9.0) in ("C1", "C2")
-        assert gamma_to_C(7.5) in ("C1", "C2")
+        assert gamma_to_C(9.0) == "C1"
+        assert gamma_to_C(7.5) == "C1"
 
     def test_gamma_c3(self):
         assert gamma_to_C(6.0) == "C3"
