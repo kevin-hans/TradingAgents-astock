@@ -1372,5 +1372,94 @@ def performance(
     console.print(Markdown(format_report(summary)))
 
 
+@app.command()
+def advise(
+    ticker: str = typer.Argument(..., help="A 股 6 位代码"),
+    date: Optional[str] = typer.Option(None, "--date", help="分析日 (YYYY-MM-DD)；缺省取最新"),
+    json_out: bool = typer.Option(False, "--json", help="输出 JSON（机器消费）"),
+    assume_neutral: bool = typer.Option(
+        False, "--assume-neutral",
+        help="无 profile 时用中性向量演示（γ_eff=5, HC=0.7, H_avail=60）",
+    ),
+    kyc_json: Optional[str] = typer.Option(
+        None, "--kyc-json",
+        help='inline KYC 答案 JSON，如 {"q1":7,"q2":5,"q3":7,"q4":7,"q5":7}',
+    ),
+):
+    """情景向量顾问：读 scenario.json + KYC → Merton 引擎 → 建议（零 LLM，秒级）。"""
+    import json as _json
+
+    from pydantic import ValidationError
+
+    from tradingagents.advisor.calibrate import from_kyc
+    from tradingagents.advisor.engine import advise as _advise
+    from tradingagents.advisor.profile_io import ProfileNotFoundError, read_profile
+    from tradingagents.advisor.questionnaire import get_questionnaire
+    from tradingagents.advisor.render import render_matrix, render_text
+    from tradingagents.advisor.scenario_io import ScenarioNotFoundError, load_scenario
+    from tradingagents.advisor.types import AdvisorConfig, InvestorVector, KYCAnswers
+
+    def _emit(payload: dict, exit_code: int) -> None:
+        if json_out:
+            console.print_json(_json.dumps(payload, ensure_ascii=False))
+        else:
+            console.print(payload)
+        raise typer.Exit(code=exit_code)
+
+    try:
+        artifact = load_scenario(ticker, date=date)
+    except ScenarioNotFoundError as e:
+        _emit({"error": "not_found", "message": str(e)}, exit_code=1)
+        return
+
+    if kyc_json is not None:
+        try:
+            answers = KYCAnswers.model_validate_json(kyc_json)
+        except ValidationError as e:
+            _emit({
+                "error": "invalid_kyc",
+                "message": "KYC 答案 schema 违例",
+                "details": _json.loads(e.json()),
+            }, exit_code=2)
+            return
+        try:
+            vector = from_kyc(answers)
+        except Exception as e:
+            _emit({"error": "internal", "message": str(e)}, exit_code=4)
+            return
+    elif assume_neutral:
+        vector = InvestorVector(gamma_eff=5.0, hc=0.7, h_avail_months=60.0)
+    else:
+        try:
+            answers = read_profile()
+        except ProfileNotFoundError:
+            _emit({
+                "error": "kyc_required",
+                "message": "需要先建立投资者画像（5 题问卷）；或用 --kyc-json / --assume-neutral",
+                "questionnaire": get_questionnaire().model_dump(),
+            }, exit_code=3)
+            return
+        try:
+            vector = from_kyc(answers)
+        except Exception as e:
+            _emit({"error": "internal", "message": str(e)}, exit_code=4)
+            return
+
+    bucket = artifact.scenario_buckets[0]
+    result = _advise(
+        bucket, vector, AdvisorConfig(),
+        ticker=ticker, date=artifact.trade_date, rating=artifact.rating,
+    )
+
+    if json_out:
+        _emit(result.model_dump(), exit_code=0)
+    else:
+        matrix = render_matrix(bucket, AdvisorConfig())
+        console.print(f"[bold]评级：{artifact.rating}  日期：{artifact.trade_date}[/bold]")
+        console.print(render_text(matrix))
+        console.print(f"\nw* = {result.trace.w_star:.1%}  action = {result.with_position.action}")
+        raise typer.Exit(code=0)
+
+
 if __name__ == "__main__":
     app()
