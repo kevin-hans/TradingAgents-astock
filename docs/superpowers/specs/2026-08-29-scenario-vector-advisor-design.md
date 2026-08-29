@@ -198,7 +198,9 @@ trace + 有仓/无仓双建议；`--json` 供机器消费（picoclaw skill 的�
 
 **生成端同日守卫**：propagate 前检测当日该票已有完整制品（full_states_log +
 scenario.json）→ 提示"复用现有研报或 --force 重跑"，提示不硬拦截（换模型/重测
-是合法动机）。现状同日重跑会全管线重烧（数据层有缓存但 LLM 管线无去重）。
+是合法动机）。现状同日重跑会全管线重烧（数据层有缓存但 LLM 管线无去重），且
+`full_states_log` 为覆盖写——`--force` 重跑前先将既有制品归档（rename 加时间
+后缀），旧结果不因重跑丢失（换模型对比是合法需求）。
 
 **Web UI**：侧栏"投资者画像"面板（五题滑杆/单选，`web/components/sidebar.py`，
 写 profile.json）；报告页渲染 3×3 矩阵并高亮用户格子（高亮格直接调引擎）。旧报
