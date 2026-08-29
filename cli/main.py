@@ -843,6 +843,18 @@ def update_research_team_status(status):
 
 
 # Ordered list of analysts for status transitions
+def existing_artifacts(results_dir: str, ticker: str, analysis_date: str) -> list:
+    """Full-state log / scenario artifact already present for (ticker, date)?"""
+    log_dir = Path(results_dir) / ticker / "TradingAgentsStrategy_logs"
+    if not log_dir.exists():
+        return []
+    names = (
+        f"full_states_log_{analysis_date}.json",
+        f"scenario_{ticker}_{analysis_date}.json",
+    )
+    return [log_dir / n for n in names if (log_dir / n).exists()]
+
+
 ANALYST_ORDER = ["market", "social", "news", "fundamentals"]
 ANALYST_AGENT_NAMES = {
     "market": "Market Analyst",
@@ -974,7 +986,7 @@ def format_tool_args(args, max_length=80) -> str:
         return result[:max_length - 3] + "..."
     return result
 
-def run_analysis(checkpoint: bool = False):
+def run_analysis(checkpoint: bool = False, force: bool = False):
     # First get all user selections
     selections = get_user_selections()
 
@@ -1014,6 +1026,24 @@ def run_analysis(checkpoint: bool = False):
 
     # Track start time for elapsed display
     start_time = time.time()
+
+    # Same-day guard (spec §7): reuse or consciously rerun; rerun archives old artifacts.
+    if not force:
+        artifacts = existing_artifacts(
+            config["results_dir"], selections["ticker"], selections["analysis_date"]
+        )
+        if artifacts:
+            names = ", ".join(p.name for p in artifacts)
+            rerun = typer.confirm(
+                f"{selections['ticker']} 在 {selections['analysis_date']} 已有研报制品（{names}）。"
+                "重跑将归档旧制品，仍要继续吗？",
+                default=False,
+            )
+            if not rerun:
+                console.print(
+                    "[yellow]已取消。可直接使用现有研报，或加 --force 跳过此确认重跑。[/yellow]"
+                )
+                return
 
     # Create result directory
     results_dir = Path(config["results_dir"]) / selections["ticker"] / selections["analysis_date"]
@@ -1203,7 +1233,10 @@ def run_analysis(checkpoint: bool = False):
 
         # Get final state and decision
         final_state = trace[-1]
-        decision = graph.process_signal(final_state["final_trade_decision"])
+        # Align with web/runner.py: persist state log + memory + scenario artifact.
+        decision = graph.finalize_graph_run(
+            selections["ticker"], selections["analysis_date"], final_state
+        )
 
         # Update all agent statuses to completed
         for agent in message_buffer.agent_status:
@@ -1273,6 +1306,11 @@ def _default(
         "--clear-checkpoints",
         help="Delete all saved checkpoints before running (force fresh start).",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="跳过同日研报守卫，重跑并归档旧制品。",
+    ),
 ):
     """裸跑 `tradingagents`（不带子命令）＝ 直接开始分析。
 
@@ -1283,7 +1321,7 @@ def _default(
     """
     if ctx.invoked_subcommand is not None:
         return
-    analyze(checkpoint=checkpoint, clear_checkpoints=clear_checkpoints)
+    analyze(checkpoint=checkpoint, clear_checkpoints=clear_checkpoints, force=force)
 
 
 @app.command()
@@ -1298,12 +1336,17 @@ def analyze(
         "--clear-checkpoints",
         help="Delete all saved checkpoints before running (force fresh start).",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="跳过同日研报守卫，重跑并归档旧制品。",
+    ),
 ):
     if clear_checkpoints:
         from tradingagents.graph.checkpointer import clear_all_checkpoints
         n = clear_all_checkpoints(DEFAULT_CONFIG["data_cache_dir"])
         console.print(f"[yellow]Cleared {n} checkpoint(s).[/yellow]")
-    run_analysis(checkpoint=checkpoint)
+    run_analysis(checkpoint=checkpoint, force=force)
 
 
 @app.command()

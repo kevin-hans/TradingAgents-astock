@@ -21,7 +21,7 @@ def test_bare_invocation_does_not_error_with_missing_command(monkeypatch):
 
     assert "Missing command" not in (result.output or "")
     assert result.exit_code == 0
-    assert called == {"checkpoint": False}, "裸跑应当直接进入分析流程"
+    assert called == {"checkpoint": False, "force": False}, "裸跑应当直接进入分析流程"
 
 
 def test_bare_invocation_still_accepts_original_flags(monkeypatch):
@@ -33,7 +33,7 @@ def test_bare_invocation_still_accepts_original_flags(monkeypatch):
     result = CliRunner().invoke(app, ["--checkpoint"])
 
     assert result.exit_code == 0
-    assert called == {"checkpoint": True}
+    assert called == {"checkpoint": True, "force": False}
 
 
 def test_subcommands_are_still_registered():
