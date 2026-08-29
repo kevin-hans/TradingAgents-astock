@@ -98,11 +98,14 @@ alpha | holding]` 结构，且 holding 带 `d` 后缀）。
 deepseek-v4-flash 等模型在 tool call 时可能返回中文股票名而非 6 位代码。`safe_ticker_component` 已加兜底自动转码，但不同模型表现仍有差异。
 
 ### 测试
-**干净 clone（`pip install -e .` 不带 `[agentsdk]`）跑 `pytest tests/` 应当是
-361 passed / 13 skipped / **0 failed**。出现 failed 就是真回归。**
-需要可选依赖的用例用 `requires_sdk` 标记跳过——⚠️ **占位类型绝不要用 `Exception`
-基类**：`ClaudeSDKError` 曾被占位成 `Exception`，进 `_FALLBACK_ERRORS` 后让"订阅凭据
-失效不得降级到计费 provider"这条护栏彻底失效（v0.5.4 修）。
+**干净 clone（`pip install -e .` 不带 `[agentsdk]` / `[dev]` / `[mcp]`）跑 `pytest
+tests/` 应当是 494 passed / 1 skipped / **0 failed**（P2 顾问引擎 2026-08-30 交付
+后基线）。出现 failed 就是真回归。**
+需要可选依赖的用例用 `requires_sdk` 标记或 `pytest.importorskip` 守卫跳过——⚠️
+**占位类型绝不要用 `Exception` 基类**：`ClaudeSDKError` 曾被占位成 `Exception`，进
+`_FALLBACK_ERRORS` 后让"订阅凭据失效不得降级到计费 provider"这条护栏彻底失效
+（v0.5.4 修）。hypothesis property 测试住 `tests/test_advisor_engine_properties.py`，
+装 `[dev]` extra 后才跑，未装则整个文件 skip。
 
 ### CLI 必须保住裸跑（v0.5.9 血的教训）
 `cli/main.py` 里的 `@app.callback(invoke_without_command=True)` **不能删**。Typer 只
