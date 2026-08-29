@@ -93,6 +93,39 @@ class TestGuards:
         assert result.trace.sigma_sq > 0
         assert "prob_degenerate" not in [g.code for g in result.guard_reasons]
 
+    def test_nan_encountered_guard(self):
+        """NaN return → nan_encountered guard fires"""
+        import math
+        bucket = ScenarioBucket(
+            horizon_months=6,
+            scenarios=[
+                Scenario(name="bull", thesis="...", expected_return=float("nan"), prob=0.35),
+                Scenario(name="base", thesis="...", expected_return=0.05, prob=0.45),
+                Scenario(name="bear", thesis="...", expected_return=-0.15, prob=0.20),
+            ],
+            key_levels=KeyLevels(stop=9, entry_low=10, entry_high=10, target=12),
+        )
+        result = advise(bucket, _neutral_vector(), AdvisorConfig())
+        assert result.trace.w_star == 0.0
+        assert "nan_encountered" in [g.code for g in result.guard_reasons]
+
+    def test_prob_degenerate_guard(self):
+        """Σp 显著偏 1 → prob_degenerate guard fires
+
+        绕过 pydantic 校验注入非法概率来测引擎自身守卫。
+        """
+        bucket = ScenarioBucket(
+            horizon_months=6,
+            scenarios=[
+                Scenario(name="bull", thesis="...", expected_return=0.25, prob=0.55),
+                Scenario(name="base", thesis="...", expected_return=0.05, prob=0.45),
+                Scenario(name="bear", thesis="...", expected_return=-0.15, prob=0.20),
+            ],
+            key_levels=KeyLevels(stop=9, entry_low=10, entry_high=10, target=12),
+        )
+        result = advise(bucket, _neutral_vector(), AdvisorConfig())
+        assert "prob_degenerate" in [g.code for g in result.guard_reasons]
+
 
 class TestActionMapping:
     def test_action_zero_avoid(self):
@@ -116,6 +149,54 @@ class TestActionMapping:
         assert r.with_position.action in (
             "observe", "hold_underweight", "increase_overweight",
         )
+
+    def test_action_observe(self):
+        """w* ∈ (0, 0.05) → observe"""
+        bucket = ScenarioBucket(
+            horizon_months=6,
+            scenarios=[
+                Scenario(name="bull", thesis="...", expected_return=0.15, prob=0.25),
+                Scenario(name="base", thesis="...", expected_return=0.03, prob=0.45),
+                Scenario(name="bear", thesis="...", expected_return=-0.12, prob=0.30),
+            ],
+            key_levels=KeyLevels(stop=9, entry_low=10, entry_high=10, target=11),
+        )
+        vec = InvestorVector(gamma_eff=5.0, hc=0.7, h_avail_months=60.0)
+        r = advise(bucket, vec, AdvisorConfig())
+        assert 0 < r.trace.w_star < 0.05, f"w*={r.trace.w_star}"
+        assert r.with_position.action == "observe"
+
+    def test_action_hold_underweight(self):
+        """w* ∈ [0.05, 0.15) → hold_underweight"""
+        bucket = ScenarioBucket(
+            horizon_months=6,
+            scenarios=[
+                Scenario(name="bull", thesis="...", expected_return=0.15, prob=0.35),
+                Scenario(name="base", thesis="...", expected_return=0.05, prob=0.45),
+                Scenario(name="bear", thesis="...", expected_return=-0.10, prob=0.20),
+            ],
+            key_levels=KeyLevels(stop=9, entry_low=10, entry_high=10, target=11.5),
+        )
+        vec = InvestorVector(gamma_eff=15.0, hc=0.7, h_avail_months=60.0)
+        r = advise(bucket, vec, AdvisorConfig())
+        assert 0.05 <= r.trace.w_star < 0.15, f"w*={r.trace.w_star}"
+        assert r.with_position.action == "hold_underweight"
+
+    def test_action_increase_overweight(self):
+        """w* ≥ 0.15 → increase_overweight"""
+        bucket = ScenarioBucket(
+            horizon_months=6,
+            scenarios=[
+                Scenario(name="bull", thesis="...", expected_return=0.30, prob=0.45),
+                Scenario(name="base", thesis="...", expected_return=0.10, prob=0.40),
+                Scenario(name="bear", thesis="...", expected_return=-0.10, prob=0.15),
+            ],
+            key_levels=KeyLevels(stop=9, entry_low=10, entry_high=10, target=13),
+        )
+        vec = InvestorVector(gamma_eff=2.5, hc=1.0, h_avail_months=120.0)
+        r = advise(bucket, vec, AdvisorConfig())
+        assert r.trace.w_star >= 0.15, f"w*={r.trace.w_star}"
+        assert r.with_position.action == "increase_overweight"
 
 
 class TestDirection:
