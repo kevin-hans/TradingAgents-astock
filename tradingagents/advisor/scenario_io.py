@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from tradingagents.agents.schemas import Falsification, ScenarioBucket
 
 
-DEFAULT_REPORTS_DIR = Path.home() / ".tradingagents" / "reports"
+DEFAULT_RESULTS_DIR = Path.home() / ".tradingagents" / "logs"
 _FILENAME_RE = re.compile(
     r"^scenario_(?P<ticker>[^_]+)_(?P<date>\d{4}-\d{2}-\d{2})\.json$"
 )
@@ -34,10 +34,14 @@ class ScenarioIndexEntry(BaseModel):
 
 
 def _reports_dir() -> Path:
-    env = os.environ.get("TRADINGAGENTS_REPORTS_DIR")
-    if env:
-        return Path(env)
-    return DEFAULT_REPORTS_DIR
+    """获取扫描根目录。优先级：TRADINGAGENTS_REPORTS_DIR (测试用) > TRADINGAGENTS_RESULTS_DIR > default."""
+    env_reports = os.environ.get("TRADINGAGENTS_REPORTS_DIR")
+    if env_reports:
+        return Path(env_reports)
+    env_results = os.environ.get("TRADINGAGENTS_RESULTS_DIR")
+    if env_results:
+        return Path(env_results)
+    return DEFAULT_RESULTS_DIR
 
 
 def load_scenario(ticker: str, date: str | None = None) -> ScenarioArtifact:
@@ -61,7 +65,7 @@ def list_scenarios(ticker: str | None = None) -> list[ScenarioIndexEntry]:
     if not directory.exists():
         return []
     entries: list[ScenarioIndexEntry] = []
-    for path in directory.iterdir():
+    for path in directory.rglob("scenario_*.json"):  # 递归扫，兼容 P1 嵌套路径
         m = _FILENAME_RE.match(path.name)
         if not m:
             continue

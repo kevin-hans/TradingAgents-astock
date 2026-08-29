@@ -65,6 +65,14 @@ class TestLoadScenario:
         with pytest.raises(ScenarioNotFoundError):
             load_scenario("000001", date="2020-01-01")
 
+    def test_load_from_p1_nested_path(self, tmp_reports: Path):
+        """P1 实际落盘在 {results_dir}/{ticker}/TradingAgentsStrategy_logs/ 下——rglob 应能找到。"""
+        nested = tmp_reports / "000001" / "TradingAgentsStrategy_logs"
+        nested.mkdir(parents=True)
+        _write_scenario(nested, "000001", "2026-08-30")
+        art = load_scenario("000001")
+        assert art.trade_date == "2026-08-30"
+
 
 class TestListScenarios:
     def test_list_by_ticker(self, tmp_reports: Path):
