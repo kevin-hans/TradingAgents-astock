@@ -33,5 +33,5 @@ class TestWriteRead:
         loaded = read_profile()
         assert loaded.q1 == 9
         profile_dir = tmp_home / ".tradingagents"
-        stragglers = list(profile_dir.glob("profile.json.tmp*"))
+        stragglers = list(profile_dir.glob("*.tmp"))
         assert stragglers == []

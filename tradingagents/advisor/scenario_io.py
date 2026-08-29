@@ -8,7 +8,6 @@ from pydantic import BaseModel
 from tradingagents.agents.schemas import Falsification, ScenarioBucket
 
 
-DEFAULT_RESULTS_DIR = Path.home() / ".tradingagents" / "logs"
 _FILENAME_RE = re.compile(
     r"^scenario_(?P<ticker>[^_]+)_(?P<date>\d{4}-\d{2}-\d{2})\.json$"
 )
@@ -41,7 +40,7 @@ def _reports_dir() -> Path:
     env_results = os.environ.get("TRADINGAGENTS_RESULTS_DIR")
     if env_results:
         return Path(env_results)
-    return DEFAULT_RESULTS_DIR
+    return Path(os.path.expanduser("~")) / ".tradingagents" / "logs"
 
 
 def load_scenario(ticker: str, date: str | None = None) -> ScenarioArtifact:
