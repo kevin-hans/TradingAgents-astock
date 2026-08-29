@@ -211,6 +211,19 @@ trace + 有仓/无仓双建议；`--json` 供机器消费（picoclaw skill 的�
 为绝对价位不受影响）。行情拉取失败跳过该条目并汇总说明，exit code 区分
 全部成功/部分失败。
 
+**MCP 面（P3+，第四张嘴）**：宿主 LLM 出智能，工具保持零 LLM 纯函数。工具面板：
+`advise(ticker, date?)` / `scenario(ticker, date?)`（暴露原始分布供宿主推理）/
+`review()` / `profile_set(answers)` / `reports()`。
+
+- 定位铁律：MCP 只是 **CLI `--json` 的薄包装**（subprocess 调用），CLI 仍是唯一
+  机器接口；MCP 层不 import 引擎，防依赖蔓延。
+- 不进本仓库核心依赖：MCP 官方 SDK 需 httpx≥0.27 一线，与 mootdx 钉死的
+  `httpx<0.26` 结构性冲突（同 google-genai 案例）。落点三选：
+  A. 本仓库 `[mcp]` extra（`--no-deps` 安装，体验糙）；
+  **B. a-stock-data 挂工具（推荐）**——现有 MCP 服务 subprocess 调 CLI，本仓库零新依赖；
+  C. 独立小包 `tradingagents-mcp`。
+- 不做 CLI 子命令形式（console-script 独立入口），避开 v0.5.9 裸跑风险。
+
 ## 8. 维度扩展机制
 
 维度扩展按"进哪个机关"分五类，加维度 = 加一个坐标 + 一项修正，schema 保持小核心
@@ -258,6 +271,7 @@ trace + 有仓/无仓双建议；`--json` 供机器消费（picoclaw skill 的�
 | P1 | PM schema 扩展 + 校验器 + scenario.json 落盘 + 证伪条件 | 研报成为可复用数据资产，可单独发版 |
 | P2 | advisor 包（calibrate/engine/render）+ CLI advise + Web 画像面板与矩阵 | 建议查询全面可用 |
 | P3 | tradingagents review 巡检 | 决策纪律闭环 |
+| P3+ | MCP 面（§7，落点 B 推荐） | Claude Code / picoclaw 等 MCP 宿主原生消费 |
 
 ## 12. 明确不做（YAGNI）
 
