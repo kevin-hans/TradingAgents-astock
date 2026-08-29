@@ -43,7 +43,7 @@ def advise(
             code="nan_encountered", detail="μ 或 σ² 为 NaN",
         ))
 
-    if guards or sigma_sq < 1e-9:
+    if guards:
         w_raw = 0.0
         w_after_kappa = 0.0
         w_star = 0.0

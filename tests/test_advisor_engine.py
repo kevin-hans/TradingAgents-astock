@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from tradingagents.advisor.engine import advise
@@ -95,7 +97,6 @@ class TestGuards:
 
     def test_nan_encountered_guard(self):
         """NaN return → nan_encountered guard fires"""
-        import math
         bucket = ScenarioBucket(
             horizon_months=6,
             scenarios=[

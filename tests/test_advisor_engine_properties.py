@@ -42,7 +42,7 @@ class TestPropertyMonotonicity:
 
     @settings(max_examples=50)
     @given(st.floats(min_value=0.02, max_value=0.14))
-    def test_mu_up_weight_up_when_below_wmax(self, target_mu: float):
+    def test_w_never_negative_or_nan(self, target_mu: float):
         assume(target_mu < 0.14)
         p0 = 10.0
         bucket = ScenarioBucket(
