@@ -19,7 +19,7 @@ so that:
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -152,6 +152,74 @@ def render_trader_proposal(proposal: TraderProposal) -> str:
 # Portfolio Manager
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Scenario tree (P1 of the scenario-vector advisor; spec §4.1)
+# ---------------------------------------------------------------------------
+
+
+class Scenario(BaseModel):
+    """One outcome of a horizon bucket, anchored to the debate evidence."""
+
+    name: Literal["bull", "base", "bear"] = Field(
+        description="Exactly one of bull / base / bear.",
+    )
+    thesis: str = Field(
+        description=(
+            "One sentence citing the SPECIFIC bull/bear debate argument this "
+            "scenario rests on. Generic filler like 'market sentiment improves' "
+            "is not acceptable."
+        ),
+    )
+    expected_return: float = Field(
+        description=(
+            "Expected TOTAL return from the analysis-date close to the end of "
+            "the bucket horizon, as a decimal fraction (0.25 = +25%, -0.18 = -18%). "
+            "Anchor to the key levels of the same bucket: bear ≈ stop/close − 1, "
+            "bull ≈ target/close − 1."
+        ),
+    )
+    prob: float = Field(
+        description=(
+            "Probability as a decimal fraction. The three probabilities of a "
+            "bucket must sum to 1.0. Base sits in [0.35, 0.55]. When the final "
+            "rating is Hold or below, P(bear) ≥ P(bull); when Overweight or "
+            "above, P(bull) ≥ P(bear)."
+        ),
+    )
+
+
+class KeyLevels(BaseModel):
+    """Reference price levels for one horizon bucket (fork decision: shipped)."""
+
+    stop: float = Field(description="Invalidation/stop level, below analysis-date context.")
+    entry_low: float = Field(description="Lower bound of the suggested entry zone.")
+    entry_high: float = Field(description="Upper bound of the suggested entry zone.")
+    target: float = Field(description="Price target for the bucket horizon.")
+
+
+class ScenarioBucket(BaseModel):
+    """Scenario tree for one horizon (v1 ships the 6- and 12-month buckets)."""
+
+    horizon_months: int = Field(description="Bucket horizon in months; v1 uses 6 or 12.")
+    scenarios: list[Scenario] = Field(
+        description="Exactly three scenarios: bull, base, bear.",
+    )
+    key_levels: KeyLevels = Field(
+        description="Price levels for this bucket; must satisfy stop < entry_low ≤ entry_high < target.",
+    )
+
+
+class Falsification(BaseModel):
+    """Concrete, checkable conditions that would falsify the decision (spec §4)."""
+
+    conditions: list[str] = Field(
+        description=(
+            "1-3 conditions, each checkable against later data: price levels "
+            "(e.g. 'daily close below 1450 on volume'), fundamental thresholds "
+            "(e.g. 'receivables turnover days > 90'), or events."
+        ),
+    )
+
 
 class PortfolioDecision(BaseModel):
     """Structured output produced by the Portfolio Manager.
@@ -161,8 +229,11 @@ class PortfolioDecision(BaseModel):
     output instructions, so the prompt body only needs to convey context and
     the rating-scale guidance.
 
-    Like :class:`TraderProposal`, this carries no price target and no other
-    executable level — see that class for why.
+    Like :class:`TraderProposal` this stays level-free in its prose fields, but
+    this fork (kevin-hans, 2026-08-29) DOES ship executable levels inside the
+    structured ``scenario_buckets`` — the upstream docstring explicitly left
+    that to a downstream fork's responsibility. Every artifact and consumer
+    built on it carries the research-tool disclaimer (spec §13).
     """
 
     rating: PortfolioRating = Field(
@@ -189,6 +260,18 @@ class PortfolioDecision(BaseModel):
         default=None,
         description="Optional analysis horizon, e.g. '3-6 months'.",
     )
+    scenario_buckets: list[ScenarioBucket] = Field(
+        default_factory=list,
+        description=(
+            "Scenario tree for the reusable advisory artifact. Provide exactly "
+            "two buckets (horizon_months 6 and 12). Follow the anchoring and "
+            "probability rules of each nested field exactly."
+        ),
+    )
+    falsification: Optional[Falsification] = Field(
+        default=None,
+        description="1-3 concrete conditions that, if met, falsify this decision.",
+    )
 
 
 def render_pm_decision(decision: PortfolioDecision) -> str:
@@ -208,4 +291,22 @@ def render_pm_decision(decision: PortfolioDecision) -> str:
     ]
     if decision.time_horizon:
         parts.extend(["", f"**Time Horizon**: {decision.time_horizon}"])
+    if decision.scenario_buckets:
+        parts.append("")
+        parts.append("**Scenario Tree**:")
+        for b in decision.scenario_buckets:
+            summary = " / ".join(
+                f"{s.name} {s.expected_return:+.0%}@{s.prob:.0%}"
+                for s in b.scenarios
+            )
+            parts.append(f"- {b.horizon_months}M: {summary}")
+            kl = b.key_levels
+            parts.append(
+                f"  levels: stop {kl.stop}, entry {kl.entry_low}-{kl.entry_high}, target {kl.target}"
+            )
+    if decision.falsification:
+        parts.append("")
+        parts.append("**Falsification**:")
+        for cond in decision.falsification.conditions:
+            parts.append(f"- {cond}")
     return "\n".join(parts)
