@@ -49,7 +49,7 @@ Go Agent (10MB RAM)                  TradingAgents (Python)
   │                                          - MCP server 薄壳
   └─ MCP client                             - 直接 import advisor 引擎
        │                                    - 直接 import CLI 内部函数（analyze 触发）
-       │  MCP over HTTP/SSE                 - 暴露 5 个工具
+       │  MCP over HTTP/SSE                 - 暴露 6 个工具
        └──────────────────────────►         - 启动: tradingagents mcp-serve
 ```
 
@@ -113,6 +113,32 @@ async def advise(ticker, kyc_answers, date=None):
 对当前 pending 决策做纪律巡检（止损 / 目标 / 期限 / 证伪）。实现调 P3 `review`
 CLI 的等价 Python 函数。
 
+**`kyc_questionnaire() -> Questionnaire`**
+
+返回 5 题 KYC 问卷全文（题目 + 选项标签 + 分值）。用于**首次建档**或**用户主动
+更新画像**——PicoClaw 客户端拿到后本地展示、收集答案、存下来。
+
+```python
+class KYCOption(BaseModel):
+    label: str    # "全部卖出"
+    value: int    # 3
+
+class KYCQuestion(BaseModel):
+    id: Literal["q1","q2","q3","q4","q5"]
+    text: str     # "组合浮亏 20% 的第一反应"
+    options: list[KYCOption]
+
+class Questionnaire(BaseModel):
+    schema_version: Literal[1] = 1
+    questions: list[KYCQuestion]
+    note: str     # 指导客户端本地存原始答案 + inline 传的短说明
+```
+
+**为什么问卷内容由服务端持有**：题目文本、选项、分值全都是情景向量顾问 spec §5
+的一部分，与校准公式强绑定。未来任何调整（加 Q6 / 改分值 / 换措辞）只在 Python
+端 `advisor/calibrate.py` 一处改，PicoClaw 及其它 MCP 客户端无需升级——**单一
+真相源**（同 §5 让服务端做校准的同源理由）。
+
 ### 4.2 触发工具（分钟级，需显式确认）
 
 **`analyze(ticker: str, date: str | None = None, depth: Literal["quick","analyst","full"] = "full", confirm: bool = False, single_analyst: str | None = None) -> AnalyzeResult`**
@@ -154,7 +180,29 @@ confirm=True:
 **为什么不是三个独立工具**：spec §7 明确"MCP 只是 CLI 薄包装"精神——工具面板过大
 反而让 PicoClaw 的 LLM 更容易调错，`depth` 参数集中在一个工具更好。
 
-### 4.3 显式 YAGNI 的工具
+### 4.3 首次建档：`kyc_required` 错误 + 内嵌问卷
+
+`advise` 与 `review` 缺 `kyc_answers` 参数时，**不做隐式默认**（不假设"中性向量"，
+也不静默出通用建议），返回 `kyc_required` 结构化错误，并**在错误对象里内嵌完整
+问卷**——PicoClaw LLM 收到后能立刻据此向用户抛出问题，不必先额外调
+`kyc_questionnaire()` 再重试。
+
+```json
+{
+  "error": "kyc_required",
+  "message": "需要先建立投资者画像（5 题问卷）",
+  "questionnaire": { ...同 §4.1 Questionnaire 结构 }
+}
+```
+
+**边界：**
+
+- `kyc_answers` 传了但 schema 违例（`q1=0` / 缺字段）：返回 `invalid_kyc` **而
+  非** `kyc_required`，不下发问卷——防止 PicoClaw LLM 陷入"每次错都重问全部 5 题"
+  的循环。错误对象附具体字段说明让 LLM 修正后重试
+- `scenario` / `reports` / `kyc_questionnaire` / `analyze` 不需要向量，与本节无关
+
+### 4.4 显式 YAGNI 的工具
 
 不做：
 
@@ -203,6 +251,30 @@ class KYCAnswers(BaseModel):
 **多客户端支持**：本形状天然支持多用户——每个 PicoClaw 存自己的答案，服务端无
 状态。CLI 侧仍可选用 `~/.tradingagents/profile.json`（spec §5 原方案），两条路径
 互不干扰。
+
+### 5.1 首次建档流程（PicoClaw 端典型交互）
+
+```
+用户: "看看平安银行"
+PicoClaw LLM: 调 advise("000001")  ← 首次，本地无答案
+Server: 返回 kyc_required + 内嵌问卷
+PicoClaw LLM: 依次向用户抛出 5 题
+  "先请回答 5 个问题帮我了解你——
+   1. 如果你的组合浮亏 20%，你的第一反应是？
+      a) 全部卖出  b) 卖一部分  c) 持有  d) 加仓"
+  ... (5 轮问答)
+用户答完
+PicoClaw LLM:
+  1. 本地存 {q1:5, q2:7, q3:5, q4:7, q5:7}
+  2. 重试 advise("000001", kyc_answers={...})
+Server: 正常返回建议
+以后所有调用：本地读答案 → inline 传，问卷不再触发
+```
+
+**用户想更新画像**：PicoClaw 客户端提供一句自然语言入口即可（"重做投资画像"
+→ PicoClaw LLM 主动调 `kyc_questionnaire()` 重来一遍并覆写本地存储）。这是
+`kyc_questionnaire` 作为独立工具（而非只依赖 `kyc_required` 错误内嵌）存在的
+主要用例。
 
 ## 6. `analyze` 的显式确认语义（详）
 
@@ -264,10 +336,10 @@ tradingagents mcp-serve --transport stdio
 picoclaw mcp add tradingagents \
   --transport sse \
   --url http://<server-ip>:8765/sse
-picoclaw mcp test tradingagents   # 确认 5 个工具能被发现
+picoclaw mcp test tradingagents   # 确认 6 个工具能被发现
 ```
 
-之后 PicoClaw 的 chat LLM 会在 tool 面板里看到这 5 个工具，自主决定何时调用。
+之后 PicoClaw 的 chat LLM 会在 tool 面板里看到这 6 个工具，自主决定何时调用。
 
 ### 7.3 网络与安全
 
@@ -302,7 +374,7 @@ tradingagents/
 ├── mcp/
 │   ├── __init__.py
 │   ├── server.py       # MCP server 启动、工具挂载
-│   ├── tools.py        # 5 个工具的 pydantic schema + 实现
+│   ├── tools.py        # 6 个工具的 pydantic schema + 实现
 │   └── estimate.py     # analyze 报价函数
 ```
 
@@ -332,7 +404,8 @@ def mcp_serve(
 | 工具 | ticker 不存在（`_normalize_ticker` 拒绝港美股） | 返回 `invalid_ticker` 错误码 |
 | 工具 | `advise` 找不到 scenario.json | 返回 `not_found`，提示先 `analyze` |
 | 工具 | `advise` 找到旧版无情景数据的报告 | 返回 `scenario_unavailable`，附评级但无个性化建议 |
-| 工具 | KYC schema 违例 | pydantic 层拦截，返回 `invalid_kyc` + 具体字段 |
+| 工具 | `advise` / `review` 缺 `kyc_answers` | 返回 `kyc_required` + 内嵌完整问卷（§4.3） |
+| 工具 | KYC schema 违例（值/字段错） | pydantic 层拦截，返回 `invalid_kyc` + 具体字段（**不下发问卷**，防重问循环） |
 | 工具 | 引擎守卫触发（σ²→0 / NaN） | 返回 `no_advice` + 原因码（引擎已有） |
 | 工具 | `analyze` 中途 LLM provider 挂 | 返回错误 + 已完成节点数；无残缺制品（CLI 原子写） |
 | 工具 | `analyze` 同日已有制品且未 force | 返回 `artifact_exists`，附现有 artifact_path |
@@ -348,8 +421,9 @@ LLM 理解并向用户解释——不能返回堆栈或裸文本。
 |---|---|
 | 工具单测（mock 引擎） | 每个工具的成功路径 + 错误路径全覆盖；schema 契约（新增字段=minor，改语义=version bump） |
 | KYC 校验测试 | 边界值（q1=3/5/7/9 全枚举）+ 违例（q1=0 / q1=None / 缺字段）；确认 pydantic 拦截 |
+| KYC 建档流程测试 | `advise` / `review` 缺参数触发 `kyc_required` + 内嵌问卷；违例触发 `invalid_kyc` **不**下发问卷；`kyc_questionnaire()` 独立工具返回 schema 等价于错误内嵌 payload（防两处漂移） |
 | `analyze` 两相测试 | `confirm=false` 只返报价不跑；`confirm=true` 才真跑；同日守卫触发 |
-| MCP 服务器集成测试 | 用 mcp SDK 的 test client 跑起 server → 发现 5 个工具 → 调用一遍 |
+| MCP 服务器集成测试 | 用 mcp SDK 的 test client 跑起 server → 发现 6 个工具 → 调用一遍 |
 | CLI 兼容 | `test_cli_default_command`（裸跑不能坏）；`mcp-serve` 子命令 --help 输出稳定 |
 | Extra 隔离测试 | 干净 venv 不装 `[mcp]` → `pip install -e .` 成功 → 全量测试保持当前 baseline 不变（P1 后为 425 passed / 0 failed，CLAUDE.md 干净 clone 场景为 361）；`import tradingagents.mcp` 应 raise 清晰 ImportError |
 | 端到端（可选，标 `slow`） | 起真实 server + 用真实 PicoClaw / MCP inspector 调 `advise` 端到端跑通 |
@@ -358,7 +432,7 @@ LLM 理解并向用户解释——不能返回堆栈或裸文本。
 
 | 阶段 | 内容 | 独立价值 |
 |---|---|---|
-| M1 | `tradingagents/mcp/` 骨架 + 只读工具 4 个（reports/scenario/advise/review） + `mcp-serve` CLI + `[mcp]` extra | 已能被 PicoClaw 消费现有研报 |
+| M1 | `tradingagents/mcp/` 骨架 + 只读工具 5 个（reports/scenario/advise/review/kyc_questionnaire）+ `kyc_required` 错误 + `mcp-serve` CLI + `[mcp]` extra | 已能被 PicoClaw 消费现有研报并完成首次建档 |
 | M2 | `analyze` 工具（含估算 + 两相 confirm） | 完整触发闭环，PicoClaw 能下单新分析 |
 | M3 | 端到端联调 + PicoClaw skill 注册文档 | 交付使用 |
 
