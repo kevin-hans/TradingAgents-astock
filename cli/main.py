@@ -1460,5 +1460,29 @@ def advise(
         raise typer.Exit(code=0)
 
 
+@app.command()
+def reports(
+    ticker: Optional[str] = typer.Option(None, "--ticker", help="按代码过滤"),
+    json_out: bool = typer.Option(False, "--json", help="输出 JSON"),
+):
+    """列出可用研报（有 scenario.json 的分析日期）。"""
+    import json as _json
+
+    from tradingagents.advisor.scenario_io import list_scenarios
+
+    entries = list_scenarios(ticker=ticker)
+    payload = {
+        "reports": [
+            {"ticker": e.ticker, "date": e.trade_date, "path": e.path}
+            for e in sorted(entries, key=lambda x: (x.ticker, x.trade_date))
+        ]
+    }
+    if json_out:
+        console.print_json(_json.dumps(payload, ensure_ascii=False))
+    else:
+        for e in payload["reports"]:
+            console.print(f"{e['ticker']}  {e['date']}  {e['path']}")
+
+
 if __name__ == "__main__":
     app()
