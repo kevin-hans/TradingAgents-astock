@@ -647,6 +647,9 @@ class TradingAgentsGraph:
         # Log state to disk.
         self._log_state(trade_date, final_state)
 
+        # Reusable advisory artifact (spec §4.4).
+        self._write_scenario_artifact(company_name, trade_date, final_state)
+
         # Store decision for deferred reflection on the next same-ticker run.
         self.memory_log.store_decision(
             ticker=company_name,
@@ -724,6 +727,7 @@ class TradingAgentsGraph:
             },
             "investment_plan": final_state["investment_plan"],
             "final_trade_decision": final_state["final_trade_decision"],
+            "scenario_tree": final_state.get("scenario_tree"),
         }
 
         # Save to file. Reject ticker values that would escape the
@@ -733,8 +737,44 @@ class TradingAgentsGraph:
         directory.mkdir(parents=True, exist_ok=True)
 
         log_path = directory / f"full_states_log_{trade_date}.json"
+        if log_path.exists():
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            log_path.rename(
+                log_path.with_name(f"full_states_log_{trade_date}.archived-{stamp}.json")
+            )
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump(self.log_states_dict[str(trade_date)], f, indent=4)
+
+    def _write_scenario_artifact(self, company_name, trade_date, final_state):
+        """Write the machine-readable scenario artifact; archive any prior copy."""
+        tree = final_state.get("scenario_tree")
+        if not tree or not tree.get("decision", {}).get("scenario_buckets"):
+            return
+        safe_ticker = safe_ticker_component(company_name)
+        directory = (
+            Path(self.config["results_dir"]) / safe_ticker / "TradingAgentsStrategy_logs"
+        )
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"scenario_{safe_ticker}_{trade_date}.json"
+        if path.exists():
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            path.rename(
+                path.with_name(
+                    f"scenario_{safe_ticker}_{trade_date}.archived-{stamp}.json"
+                )
+            )
+        payload = {
+            "version": 1,
+            "ticker": safe_ticker,
+            "trade_date": str(trade_date),
+            "rating": tree["decision"]["rating"],
+            "scenario_buckets": tree["decision"]["scenario_buckets"],
+            "falsification": tree["decision"].get("falsification"),
+            "scenario_meta": tree.get("scenario_meta", {}),
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
 
     def process_signal(self, full_signal):
         """Process a signal to extract the core decision."""
