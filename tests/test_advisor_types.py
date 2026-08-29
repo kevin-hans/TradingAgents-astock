@@ -36,6 +36,10 @@ class TestInvestorVector:
         with pytest.raises(ValidationError):
             InvestorVector(gamma_eff=-1.0, hc=0.6, h_avail_months=60.0)
 
+    def test_reject_gamma_below_floor(self):
+        with pytest.raises(ValidationError):
+            InvestorVector(gamma_eff=0.5, hc=0.6, h_avail_months=60.0)
+
 
 class TestAdvisorConfig:
     def test_defaults(self):
@@ -45,6 +49,9 @@ class TestAdvisorConfig:
         assert c.r_f == 0.015
         assert c.action_watch == 0.05
         assert c.action_overweight == 0.15
+        assert c.gamma_hc_coef == 0.5
+        assert c.retirement_age == 65
+        assert c.anchor_tolerance == 0.05
 
     def test_reject_nonpositive_kappa(self):
         with pytest.raises(ValidationError):

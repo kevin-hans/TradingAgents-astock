@@ -22,14 +22,9 @@ class KYCAnswers(BaseModel):
 
 
 class InvestorVector(BaseModel):
-    """校准后的投资者向量（引擎入参）。
+    """校准后的投资者向量（引擎入参）。"""
 
-    gamma_eff: 有效风险规避系数 (>= 1.5)
-    hc: 人力资本 (0..1)
-    h_avail_months: 距流动性事件月数
-    """
-
-    gamma_eff: PositiveFloat
+    gamma_eff: float = Field(ge=1.5)
     hc: float = Field(ge=0.0, le=1.0)
     h_avail_months: float = Field(ge=0.0)
 
