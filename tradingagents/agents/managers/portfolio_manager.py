@@ -106,42 +106,56 @@ Be decisive and ground every conclusion in specific evidence from the analysts.{
         )
 
         scenario_meta = {"available": False}
-        if decision is not None and decision.scenario_buckets:
-            p0 = fetch_p0(state["company_of_interest"], state["trade_date"])
-            violations = validate_scenario_tree(decision, p0)
-            if violations:
-                retry_prompt = (
-                    prompt
-                    + "\n\n---\nYour structured scenario tree violated these rules; "
-                    "fix them and answer again:\n"
-                    + "\n".join(f"- {v}" for v in violations)
-                )
-                try:
-                    decision = structured_llm.invoke(retry_prompt)
-                    markdown = render_pm_decision(decision)
+        scenario_tree = None
+        if decision is not None:
+            try:
+                if decision.scenario_buckets:
+                    p0 = fetch_p0(state["company_of_interest"], state["trade_date"])
                     violations = validate_scenario_tree(decision, p0)
-                except Exception:
-                    violations = ["structured retry invocation failed"]
-            if violations:
+                    if violations:
+                        retry_prompt = (
+                            prompt
+                            + "\n\n---\nYour structured scenario tree violated these rules; "
+                            "fix them and answer again:\n"
+                            + "\n".join(f"- {v}" for v in violations)
+                        )
+                        try:
+                            decision = structured_llm.invoke(retry_prompt)
+                            markdown = render_pm_decision(decision)
+                            violations = validate_scenario_tree(decision, p0)
+                        except Exception:
+                            violations = ["structured retry invocation failed"]
+                    if violations:
+                        logger.warning(
+                            "Portfolio Manager: scenario tree degraded after retry: %s",
+                            violations,
+                        )
+                        decision.scenario_buckets = []
+                        decision.falsification = None
+                        markdown = render_pm_decision(decision)
+                        scenario_meta["degraded"] = violations
+                    else:
+                        scenario_meta["available"] = True
+                        if p0 is None:
+                            scenario_meta["unanchored"] = True
+                scenario_tree = {
+                    "decision": decision.model_dump(mode="json"),
+                    "scenario_meta": scenario_meta,
+                }
+            except Exception as exc:
+                # 情景附属功能绝不能阻塞主管线：任何意外异常都降级为无树。
                 logger.warning(
-                    "Portfolio Manager: scenario tree degraded after retry: %s",
-                    violations,
+                    "Portfolio Manager: scenario tree failed unexpectedly (%s); degrading",
+                    exc,
                 )
                 decision.scenario_buckets = []
                 decision.falsification = None
                 markdown = render_pm_decision(decision)
-                scenario_meta["degraded"] = violations
-            else:
-                scenario_meta["available"] = True
-                if p0 is None:
-                    scenario_meta["unanchored"] = True
-
-        scenario_tree = None
-        if decision is not None:
-            scenario_tree = {
-                "decision": decision.model_dump(mode="json"),
-                "scenario_meta": scenario_meta,
-            }
+                scenario_meta = {"available": False, "degraded": [f"unexpected error: {exc}"]}
+                scenario_tree = {
+                    "decision": decision.model_dump(mode="json"),
+                    "scenario_meta": scenario_meta,
+                }
 
         new_risk_debate_state = {
             "judge_decision": markdown,

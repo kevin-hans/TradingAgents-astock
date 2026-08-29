@@ -108,3 +108,18 @@ class TestPMScenarioWiring:
         out = node(_state())
         assert out["final_trade_decision"] == "free text"
         assert out["scenario_tree"] is None
+
+    def test_unexpected_validator_exception_never_breaks_node(self, monkeypatch):
+        import tradingagents.agents.managers.portfolio_manager as pmm
+        good = _decision()
+
+        def boom(decision, p0):
+            raise ZeroDivisionError("p0 was 0")
+        monkeypatch.setattr(pmm, "validate_scenario_tree", boom)
+        monkeypatch.setattr(pmm, "fetch_p0", lambda t, d: 0.0)
+        out, structured = self._run([good])
+        assert out["scenario_tree"]["scenario_meta"]["available"] is False
+        assert any("unexpected error" in v for v in out["scenario_tree"]["scenario_meta"]["degraded"])
+        assert out["scenario_tree"]["decision"]["scenario_buckets"] == []
+        assert "**Scenario Tree**:" not in out["final_trade_decision"]
+        assert out["final_trade_decision"].startswith("**Rating**")
