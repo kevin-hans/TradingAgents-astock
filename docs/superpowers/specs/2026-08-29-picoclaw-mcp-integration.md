@@ -62,7 +62,7 @@ Go Agent (10MB RAM)                  TradingAgents (Python)
 - 消费端只读原则（同 spec §7）：`advise` / `scenario` / `review` / `reports` 秒级
   返回，永不触发研究。`analyze` 是唯一触发重研究的工具，**必须显式 confirm 才执行**。
 - 单一真相源（KYC 校准）：投资者向量的 γ_eff / HC / H_avail 公式只在 Python 端
-  `advisor/calibrate.py` 存在；PicoClaw 只发原始 KYC 答案，不复刻公式。
+  `advisor/calibrate.py` 存在；所有 MCP 客户端只发原始 KYC 答案，不复刻公式。
 - 服务端无用户会话状态：MCP 层不持有 profile.json（与 CLI 层可选持有解耦）；
   每次请求携带完整投资者向量，天然支持多客户端。
 
@@ -116,7 +116,8 @@ CLI 的等价 Python 函数。
 **`kyc_questionnaire() -> Questionnaire`**
 
 返回 5 题 KYC 问卷全文（题目 + 选项标签 + 分值）。用于**首次建档**或**用户主动
-更新画像**——PicoClaw 客户端拿到后本地展示、收集答案、存下来。
+更新画像**——任何 MCP 客户端（PicoClaw / Claude Code / Codex / 其它）拿到后自行
+决定如何呈现给用户、收集答案、本地存储。
 
 ```python
 class KYCOption(BaseModel):
@@ -136,8 +137,8 @@ class Questionnaire(BaseModel):
 
 **为什么问卷内容由服务端持有**：题目文本、选项、分值全都是情景向量顾问 spec §5
 的一部分，与校准公式强绑定。未来任何调整（加 Q6 / 改分值 / 换措辞）只在 Python
-端 `advisor/calibrate.py` 一处改，PicoClaw 及其它 MCP 客户端无需升级——**单一
-真相源**（同 §5 让服务端做校准的同源理由）。
+端 `advisor/calibrate.py` 一处改，所有 MCP 客户端无需升级——**单一真相源**
+（同 §5 让服务端做校准的同源理由）。
 
 ### 4.2 触发工具（分钟级，需显式确认）
 
@@ -184,7 +185,7 @@ confirm=True:
 
 `advise` 与 `review` 缺 `kyc_answers` 参数时，**不做隐式默认**（不假设"中性向量"，
 也不静默出通用建议），返回 `kyc_required` 结构化错误，并**在错误对象里内嵌完整
-问卷**——PicoClaw LLM 收到后能立刻据此向用户抛出问题，不必先额外调
+问卷**——任何 MCP 客户端收到后都能立刻据此向用户抛出问题，不必先额外调
 `kyc_questionnaire()` 再重试。
 
 ```json
@@ -198,7 +199,7 @@ confirm=True:
 **边界：**
 
 - `kyc_answers` 传了但 schema 违例（`q1=0` / 缺字段）：返回 `invalid_kyc` **而
-  非** `kyc_required`，不下发问卷——防止 PicoClaw LLM 陷入"每次错都重问全部 5 题"
+  非** `kyc_required`，不下发问卷——防止客户端 LLM 陷入"每次错都重问全部 5 题"
   的循环。错误对象附具体字段说明让 LLM 修正后重试
 - `scenario` / `reports` / `kyc_questionnaire` / `analyze` 不需要向量，与本节无关
 
@@ -214,7 +215,9 @@ confirm=True:
 
 ## 5. 投资者向量的形状
 
-**PicoClaw 端：本地持久化 5 题 KYC 原始答案**（每题一个整数，见 spec §5）：
+**客户端本地持久化 5 题 KYC 原始答案**（每题一个整数，见 spec §5），存储形式由
+各 MCP 客户端自行决定（PicoClaw 配置文件、Claude Code 本地缓存、命令行工具的
+点文件等都可）：
 
 ```json
 {
@@ -223,7 +226,7 @@ confirm=True:
 }
 ```
 
-存储位置由 PicoClaw 侧决定（配置文件 / 内存 / 加密存储都可）。**服务端不做假设**。
+**服务端对客户端存储形式不做任何假设**——只要每次调用带上 `KYCAnswers` 即可。
 
 **MCP 调用入参形状：**
 
@@ -243,36 +246,39 @@ class KYCAnswers(BaseModel):
 **为什么发原始答案而非算好的向量：**
 
 1. 校准公式（`γ_eff = γ×(1+0.5(1−HC))` 等）与 spec 强绑定，未来任何 κ / γ 修正
-   在 Python 端一处改；若 PicoClaw 侧复刻公式，双端漂移风险高
+   在 Python 端一处改；若客户端复刻公式，N 处漂移风险高
 2. 5 个整数带宽可忽略
-3. 服务端可以在校准时应用 v2/v3 的新维度（如 v1.5 的税务状态），无需 PicoClaw
-   升级即可享受
+3. 服务端可以在校准时应用 v2/v3 的新维度（如 v1.5 的税务状态），所有 MCP 客户端
+   无需升级即可享受
 
-**多客户端支持**：本形状天然支持多用户——每个 PicoClaw 存自己的答案，服务端无
-状态。CLI 侧仍可选用 `~/.tradingagents/profile.json`（spec §5 原方案），两条路径
-互不干扰。
+**多客户端支持**：本形状天然支持多用户/多客户端——每个客户端存自己的答案，服务
+端无状态。CLI 侧仍可选用 `~/.tradingagents/profile.json`（spec §5 原方案，人工
+使用场景），两条路径互不干扰。
 
-### 5.1 首次建档流程（PicoClaw 端典型交互）
+### 5.1 首次建档流程（协议层机制，适用于所有 MCP 客户端）
+
+以 PicoClaw 场景为例，Claude Code / Codex / 其它 MCP 客户端流程完全一致，只是
+"呈现给用户"的形式不同（PicoClaw 用聊天轮、Web UI 可能用滑杆表单、CLI 客户端可
+能用 prompt 交互）：
 
 ```
 用户: "看看平安银行"
-PicoClaw LLM: 调 advise("000001")  ← 首次，本地无答案
+客户端 LLM: 调 advise("000001")  ← 首次，本地无答案
 Server: 返回 kyc_required + 内嵌问卷
-PicoClaw LLM: 依次向用户抛出 5 题
-  "先请回答 5 个问题帮我了解你——
-   1. 如果你的组合浮亏 20%，你的第一反应是？
-      a) 全部卖出  b) 卖一部分  c) 持有  d) 加仓"
-  ... (5 轮问答)
+客户端 LLM: 用客户端擅长的方式向用户收集 5 题答案
+  （PicoClaw: 依次抛出 5 轮问答；
+    Claude Code: 一次性列出 5 题请用户回复；
+    Web UI 类: 渲染表单）
 用户答完
-PicoClaw LLM:
+客户端:
   1. 本地存 {q1:5, q2:7, q3:5, q4:7, q5:7}
   2. 重试 advise("000001", kyc_answers={...})
 Server: 正常返回建议
 以后所有调用：本地读答案 → inline 传，问卷不再触发
 ```
 
-**用户想更新画像**：PicoClaw 客户端提供一句自然语言入口即可（"重做投资画像"
-→ PicoClaw LLM 主动调 `kyc_questionnaire()` 重来一遍并覆写本地存储）。这是
+**用户想更新画像**：任意 MCP 客户端均可提供入口（自然语言指令 / 命令 / 按钮）
+让 LLM 主动调 `kyc_questionnaire()` 重来一遍并覆写本地存储。这是
 `kyc_questionnaire` 作为独立工具（而非只依赖 `kyc_required` 错误内嵌）存在的
 主要用例。
 
