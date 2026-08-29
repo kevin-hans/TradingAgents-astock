@@ -71,3 +71,28 @@ def invoke_structured_or_freetext(
 
     response = plain_llm.invoke(prompt)
     return response.content
+
+
+def invoke_structured_or_freetext_typed(
+    structured_llm: Optional[Any],
+    plain_llm: Any,
+    prompt: Any,
+    render: Callable[[T], str],
+    agent_name: str,
+) -> tuple[str, Optional[T]]:
+    """Like :func:`invoke_structured_or_freetext` but also returns the typed object.
+
+    Returns ``(markdown, obj)`` when the structured call succeeded and
+    ``(markdown, None)`` when it fell back to free text.
+    """
+    if structured_llm is not None:
+        try:
+            result = structured_llm.invoke(prompt)
+            return render(result), result
+        except Exception as exc:
+            logger.warning(
+                "%s: structured-output invocation failed (%s); retrying once as free text",
+                agent_name, exc,
+            )
+    response = plain_llm.invoke(prompt)
+    return response.content, None

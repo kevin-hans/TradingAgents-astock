@@ -76,4 +76,7 @@ class AgentState(MessagesState):
         RiskDebateState, "Current state of the debate on evaluating risk"
     ]
     final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
+    scenario_tree: Annotated[
+        object, "Typed PM decision (model_dump) + scenario_meta; None on free-text fallback"
+    ]
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]

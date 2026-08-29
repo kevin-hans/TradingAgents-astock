@@ -10,22 +10,28 @@ back gracefully to free-text generation.
 
 from __future__ import annotations
 
+import logging
+
 from tradingagents.agents.schemas import PortfolioDecision, render_pm_decision
 from tradingagents.agents.utils.agent_utils import (
     build_instrument_context,
     get_language_instruction,
 )
+from tradingagents.agents.utils.scenario_check import fetch_p0, validate_scenario_tree
 from tradingagents.agents.utils.structured import (
     bind_structured,
-    invoke_structured_or_freetext,
+    invoke_structured_or_freetext_typed,
 )
 
+logger = logging.getLogger(__name__)
 
-# Mirrors the Trader: the schema alone cannot stop the model from putting
-# price levels into the prose fields, so the prompt says it explicitly too.
-_NO_LEVELS_RULE = (
-    "\n- Do NOT state entry prices, stop-loss levels, target prices or "
-    "position sizes for this security; give the rating and the reasoning."
+
+# Fork decision (2026-08-29): executable levels ARE shipped, but only inside
+# the structured scenario fields — prose sections stay level-free so the
+# memory log and report readers keep their current shape.
+_LEVELS_RULE = (
+    "\n- State entry/stop/target levels ONLY inside the structured scenario "
+    "fields; keep the prose summary and thesis free of specific levels."
 )
 
 
@@ -89,9 +95,9 @@ def create_portfolio_manager(llm):
 
 ---
 
-Be decisive and ground every conclusion in specific evidence from the analysts.{_NO_LEVELS_RULE}{get_language_instruction()}"""
+Be decisive and ground every conclusion in specific evidence from the analysts.{_LEVELS_RULE}{get_language_instruction()}"""
 
-        final_trade_decision = invoke_structured_or_freetext(
+        markdown, decision = invoke_structured_or_freetext_typed(
             structured_llm,
             llm,
             prompt,
@@ -99,8 +105,46 @@ Be decisive and ground every conclusion in specific evidence from the analysts.{
             "Portfolio Manager",
         )
 
+        scenario_meta = {"available": False}
+        if decision is not None and decision.scenario_buckets:
+            p0 = fetch_p0(state["company_of_interest"], state["trade_date"])
+            violations = validate_scenario_tree(decision, p0)
+            if violations:
+                retry_prompt = (
+                    prompt
+                    + "\n\n---\nYour structured scenario tree violated these rules; "
+                    "fix them and answer again:\n"
+                    + "\n".join(f"- {v}" for v in violations)
+                )
+                try:
+                    decision = structured_llm.invoke(retry_prompt)
+                    markdown = render_pm_decision(decision)
+                    violations = validate_scenario_tree(decision, p0)
+                except Exception:
+                    violations = ["structured retry invocation failed"]
+            if violations:
+                logger.warning(
+                    "Portfolio Manager: scenario tree degraded after retry: %s",
+                    violations,
+                )
+                decision.scenario_buckets = []
+                decision.falsification = None
+                markdown = render_pm_decision(decision)
+                scenario_meta["degraded"] = violations
+            else:
+                scenario_meta["available"] = True
+                if p0 is None:
+                    scenario_meta["unanchored"] = True
+
+        scenario_tree = None
+        if decision is not None:
+            scenario_tree = {
+                "decision": decision.model_dump(mode="json"),
+                "scenario_meta": scenario_meta,
+            }
+
         new_risk_debate_state = {
-            "judge_decision": final_trade_decision,
+            "judge_decision": markdown,
             "history": risk_debate_state["history"],
             "aggressive_history": risk_debate_state["aggressive_history"],
             "conservative_history": risk_debate_state["conservative_history"],
@@ -114,7 +158,8 @@ Be decisive and ground every conclusion in specific evidence from the analysts.{
 
         return {
             "risk_debate_state": new_risk_debate_state,
-            "final_trade_decision": final_trade_decision,
+            "final_trade_decision": markdown,
+            "scenario_tree": scenario_tree,
         }
 
     return portfolio_manager_node
