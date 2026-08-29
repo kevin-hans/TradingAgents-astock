@@ -133,6 +133,20 @@ deepseek-v4-flash 等模型在 tool call 时可能返回中文股票名而非 6 
 静默给用户留下一台死服务器。另外快照**必须在 `config.setup()` 之后**取，否则拿到的是
 模块默认空值，"还原"反而把用户真实配置抹成空。
 
+### MCP 集成规范：MCP server 必须是 CLI 的薄壳（项目级方针）
+**TradingAgents 的 MCP server 不得承担业务逻辑**。所有"重处理"——analyze 管线
+调度、artifact 管理与归档、同日守卫、advisor 引擎调用、KYC 校准、错误分类等
+——**必须住在 CLI 命令实现里**。MCP 层职责严格限定于：入参解析、出参 JSON 化、
+错误码映射、subprocess 调 CLI。**新增 MCP 工具的判定标准：必须能一句话说清
+"就是把哪个 CLI 命令包了一层"**；若必要逻辑 CLI 里没有，先在 CLI 里加然后 MCP
+调用，不允许"在 MCP 层顺手加个功能"。
+
+实现形态强制走 **subprocess 调 CLI**（不是 import CLI 函数）——进程边界物理保证
+MCP 层无业务代码漂移。`tradingagents/mcp/` 下**不得 import `tradingagents.advisor` /
+`tradingagents.graph` / `tradingagents.dataflows` 等业务模块**，有静态守卫测试拦。
+此方针优先级高于减少 subprocess 开销等性能考量。设计与实现细节见
+`docs/superpowers/specs/2026-08-29-picoclaw-mcp-integration.md`。
+
 ### 待处理 PR
 - PR #18（hejingchi）：start_date 功能 + 主题切换 + Windows 字体。不建议直接 merge（与 v0.2.6 冲突），start_date 功能值得后续自行实现。
 
@@ -144,6 +158,7 @@ deepseek-v4-flash 等模型在 tool call 时可能返回中文股票名而非 6 
 - `safe_ticker_component` 是安全边界，任何绕过路径校验的改动必须慎重评估
 - 数据层新增接口遵循 `tradingagents/dataflows/interface.py` 的 vendor 路由模式
 - Web UI 改动在 `web/` 目录，用 `streamlit run web/launch.py` 本地测试
+- MCP server 是 CLI 的薄壳，MCP 层零业务逻辑（详见"MCP 集成规范"段）
 
 ## 相关项目
 - [a-stock-data](https://github.com/simonlin1212/a-stock-data) — A 股 MCP 数据服务（Claude Code 用的 skill）
