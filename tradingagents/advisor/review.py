@@ -5,6 +5,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
+from tradingagents.advisor.scenario_io import ScenarioArtifact
 from tradingagents.agents.schemas import ScenarioBucket
 
 
@@ -78,4 +79,32 @@ def check_bucket(
         target_hit=target_hit,
         horizon_expired=horizon_expired,
         fresh_warning=fresh_warning,
+    )
+
+
+def build_review_item(
+    entry: dict,
+    artifact: ScenarioArtifact,
+    price: float,
+    p0: Optional[float],
+    today: date,
+) -> ReviewItem:
+    """把 pending 决策 + scenario 制品 + 现价组装成 ReviewItem（每桶一查）。"""
+    analysis_date = date.fromisoformat(artifact.trade_date)
+    checks = [
+        check_bucket(b, price=price, today=today,
+                     analysis_date=analysis_date, p0=p0)
+        for b in artifact.scenario_buckets
+    ]
+    falsification = (
+        list(artifact.falsification.conditions) if artifact.falsification else []
+    )
+    return ReviewItem(
+        ticker=entry["ticker"],
+        date=entry["date"],
+        rating=entry["rating"],
+        price=price,
+        p0=p0,
+        checks=checks,
+        falsification=falsification,
     )

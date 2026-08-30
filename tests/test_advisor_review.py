@@ -1,7 +1,8 @@
 from datetime import date
 
-from tradingagents.advisor.review import BucketCheck, check_bucket
-from tradingagents.agents.schemas import KeyLevels, Scenario, ScenarioBucket
+from tradingagents.advisor.review import BucketCheck, build_review_item, check_bucket
+from tradingagents.advisor.scenario_io import ScenarioArtifact
+from tradingagents.agents.schemas import Falsification, KeyLevels, Scenario, ScenarioBucket
 
 
 def _bucket(horizon=6, stop=9.0, target=12.0) -> ScenarioBucket:
@@ -84,3 +85,49 @@ class TestCheckBucket:
         r = check_bucket(_bucket(), price=10.0, today=date(2026, 8, 30),
                          analysis_date=date(2026, 8, 1), p0=10.0)
         assert r.w_star_hint is None
+
+
+def _artifact(falsify=("cond1", "cond2")) -> ScenarioArtifact:
+    return ScenarioArtifact(
+        version=1, ticker="000001", trade_date="2026-08-01", rating="Buy",
+        scenario_buckets=[_bucket(horizon=6, stop=9.0, target=12.0)],
+        falsification=Falsification(conditions=list(falsify)) if falsify else None,
+    )
+
+
+class TestBuildReviewItem:
+    def test_assembles_from_entry_and_artifact(self):
+        entry = {"date": "2026-08-01", "ticker": "000001", "rating": "Buy"}
+        item = build_review_item(
+            entry, _artifact(), price=10.5, p0=10.0, today=date(2026, 8, 30),
+        )
+        assert item.ticker == "000001"
+        assert item.date == "2026-08-01"
+        assert item.price == 10.5
+        assert item.p0 == 10.0
+        assert len(item.checks) == 1
+        assert item.falsification == ["cond1", "cond2"]
+
+    def test_multiple_buckets(self):
+        artifact = _artifact()
+        artifact.scenario_buckets.append(_bucket(horizon=12, stop=8.5, target=14.0))
+        entry = {"date": "2026-08-01", "ticker": "000001", "rating": "Buy"}
+        item = build_review_item(entry, artifact, price=10.5, p0=10.0,
+                                 today=date(2026, 8, 30))
+        assert len(item.checks) == 2
+        assert item.checks[0].horizon_months == 6
+        assert item.checks[1].horizon_months == 12
+
+    def test_no_falsification_empty_list(self):
+        entry = {"date": "2026-08-01", "ticker": "000001", "rating": "Buy"}
+        item = build_review_item(
+            entry, _artifact(falsify=None), price=10.5, p0=10.0, today=date(2026, 8, 30),
+        )
+        assert item.falsification == []
+
+    def test_stop_price_populates_checks(self):
+        entry = {"date": "2026-08-01", "ticker": "000001", "rating": "Buy"}
+        item = build_review_item(
+            entry, _artifact(), price=8.9, p0=10.0, today=date(2026, 8, 30),
+        )
+        assert item.checks[0].stop_triggered is True
