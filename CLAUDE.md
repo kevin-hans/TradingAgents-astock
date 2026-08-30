@@ -99,7 +99,7 @@ deepseek-v4-flash 等模型在 tool call 时可能返回中文股票名而非 6 
 
 ### 测试
 **干净 clone（`pip install -e .` 不带 `[agentsdk]` / `[dev]` / `[mcp]`）跑 `pytest
-tests/` 应当是 568 passed / 1 skipped / **0 failed**（P2 顾问引擎 + P3+ MCP 集成
+tests/` 应当是 574 passed / 1 skipped / **0 failed**（P2 顾问引擎 + P3+ MCP 集成
 2026-08-30 交付后基线）。出现 failed 就是真回归。**
 需要可选依赖的用例用 `requires_sdk` 标记或 `pytest.importorskip` 守卫跳过——⚠️
 **占位类型绝不要用 `Exception` 基类**：`ClaudeSDKError` 曾被占位成 `Exception`，进
