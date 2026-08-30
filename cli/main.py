@@ -1607,22 +1607,101 @@ def scenario(
 @app.command()
 def review(
     json_out: bool = typer.Option(False, "--json", help="输出 JSON"),
+    assume_neutral: bool = typer.Option(
+        False, "--assume-neutral",
+        help="无 profile 时用中性向量（γ_eff=5, HC=0.7, H_avail=60）",
+    ),
     kyc_json: Optional[str] = typer.Option(
         None, "--kyc-json",
-        help="inline KYC 答案 JSON（P3 交付后生效）",
+        help='inline KYC 答案 JSON，如 {"q1":7,"q2":5,"q3":7,"q4":7,"q5":7}',
+    ),
+    fake_quotes: Optional[str] = typer.Option(
+        None, "--fake-quotes",
+        help="测试注入：JSON dict {code: price}，替代真行情",
     ),
 ):
-    """决策纪律巡检（止损/目标/期限/证伪）。P3 分期功能，当前未实现。"""
+    """决策纪律巡检：扫 pending 决策，检查止损/目标/期限/证伪/新鲜度（零 LLM）。"""
     import json as _json
 
-    console.print_json(_json.dumps(
-        {
-            "error": "not_implemented",
-            "message": "review 巡检属 P3 分期，尚未交付；本 stub 仅占位错误契约",
-        },
-        ensure_ascii=False,
-    ))
-    raise typer.Exit(code=5)
+    from pydantic import ValidationError
+
+    from tradingagents.advisor.calibrate import from_kyc
+    from tradingagents.advisor.profile_io import ProfileNotFoundError, read_profile
+    from tradingagents.advisor.questionnaire import get_questionnaire
+    from tradingagents.advisor.review import run_review
+    from tradingagents.advisor.types import InvestorVector, KYCAnswers
+
+    def _emit(payload: dict, exit_code: int) -> NoReturn:
+        if json_out:
+            console.print_json(_json.dumps(payload, ensure_ascii=False))
+        else:
+            console.print(payload)
+        raise typer.Exit(code=exit_code)
+
+    if kyc_json is not None and assume_neutral:
+        console.print("[red]--kyc-json 与 --assume-neutral 互斥[/red]")
+        raise typer.Exit(code=5)
+
+    if kyc_json is not None:
+        try:
+            vector = from_kyc(KYCAnswers.model_validate_json(kyc_json))
+        except ValidationError as e:
+            _emit({
+                "error": "invalid_kyc",
+                "message": "KYC 答案 schema 违例",
+                "details": _json.loads(e.json()),
+            }, exit_code=2)
+    elif assume_neutral:
+        vector = InvestorVector(gamma_eff=5.0, hc=0.7, h_avail_months=60.0)
+    else:
+        try:
+            vector = from_kyc(read_profile())
+        except ProfileNotFoundError:
+            _emit({
+                "error": "kyc_required",
+                "message": "需要先建立投资者画像（5 题问卷）；或用 --kyc-json / --assume-neutral",
+                "questionnaire": get_questionnaire().model_dump(),
+            }, exit_code=3)
+
+    quotes_provider = None
+    p0_provider = None
+    if fake_quotes is not None:
+        fake = _json.loads(fake_quotes)
+        quotes_provider = lambda codes: {
+            c: {"price": float(fake[c])} for c in codes if c in fake
+        }
+        p0_provider = lambda t, d: None
+
+    report = run_review(
+        quotes_provider=quotes_provider,
+        p0_provider=p0_provider,
+        vector=vector,
+    )
+    exit_code = 6 if any(s.reason == "quote_failed" for s in report.skipped) else 0
+    if json_out:
+        _emit(report.model_dump(), exit_code=exit_code)
+
+    for item in report.items:
+        flags = []
+        for c in item.checks:
+            if c.stop_triggered:
+                hint = f" w*→{c.w_star_hint:.0%}" if c.w_star_hint is not None else ""
+                flags.append(f"[red]止损触发{hint}[/red]")
+            if c.target_hit:
+                flags.append("[green]目标达成[/green]")
+            if c.horizon_expired:
+                flags.append("[yellow]期限到期[/yellow]")
+            if c.fresh_warning:
+                flags.append("[yellow]偏离>5%[/yellow]")
+        console.print(f"{item.ticker} {item.date} {item.rating} "
+                      f"现价 {item.price:.2f}  {' | '.join(flags) or '正常'}")
+    for s in report.skipped:
+        console.print(f"[dim]跳过 {s.ticker} {s.date}: {s.reason}[/dim]")
+    if report.manual_checklist:
+        console.print("[bold]人工核查清单:[/bold]")
+        for c in report.manual_checklist:
+            console.print(f"  - {c}")
+    raise typer.Exit(code=exit_code)
 
 
 @app.command("mcp-serve")
