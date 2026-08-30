@@ -117,3 +117,58 @@ def stdio_mcp(tmp_artifacts_env):
                 yield session
 
     return _factory
+
+
+@pytest.fixture
+def sse_mcp(tmp_artifacts_env, unused_tcp_port):
+    """Return an async context-manager factory yielding an initialised MCP
+    ClientSession over SSE transport.
+
+    Starts `tradingagents mcp-serve --transport sse --port N` as a subprocess,
+    waits up to 5 s for the /sse endpoint to respond, then connects.
+    Skips (not fails) if the server does not start in time. Same task-bound
+    enter/exit rule as stdio_mcp above.
+    """
+    pytest.importorskip("mcp")
+    pytest.importorskip("pytest_asyncio")
+    import asyncio
+    import contextlib
+    import httpx
+    from mcp.client.session import ClientSession
+    from mcp.client.sse import sse_client
+
+    port = unused_tcp_port
+    sse_url = f"http://127.0.0.1:{port}/sse"
+
+    @contextlib.asynccontextmanager
+    async def _factory():
+        proc = await asyncio.create_subprocess_exec(
+            _tradingagents_cli(),
+            "mcp-serve", "--transport", "sse", "--port", str(port),
+            env={**os.environ},
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            started = False
+            async with httpx.AsyncClient() as http:
+                for _ in range(25):  # 25 × 0.2 s = 5 s max
+                    try:
+                        async with http.stream("GET", sse_url, timeout=0.5) as r:
+                            if r.status_code == 200:
+                                started = True
+                                break
+                    except Exception:
+                        pass
+                    await asyncio.sleep(0.2)
+            if not started:
+                pytest.skip("SSE server did not start in time")
+            async with sse_client(sse_url) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    yield session
+        finally:
+            proc.terminate()
+            await proc.wait()
+
+    return _factory
