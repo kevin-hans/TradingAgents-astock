@@ -125,32 +125,64 @@ def build_server() -> Server:
     )
 
 
-def build_sse_app():
-    """SSE 传输的 starlette app（/sse 建流 + /messages/ 回投）。"""
+def build_http_app():
+    """HTTP 传输 app：legacy SSE（/sse + /messages/）与 Streamable HTTP（/mcp）并存。
+
+    /mcp 用 json_response=True——POST 直接回 JSON，无空闲 SSE 流脆弱性，
+    是长交互（如 KYC 问卷人答题间隔）客户端的推荐传输。
+    """
+    from contextlib import asynccontextmanager
+
     from starlette.applications import Starlette
     from starlette.routing import Mount, Route
 
     from mcp.server.sse import SseServerTransport
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
     server = build_server()
     sse = SseServerTransport("/messages/")
+    streamable = StreamableHTTPSessionManager(app=server, json_response=True)
+
+    @asynccontextmanager
+    async def _lifespan(app):
+        async with streamable.run():
+            yield
 
     async def _handle_sse(scope, receive, send):
-        # 纯 ASGI 形状：starlette 1.6 的 Request 没有 .send，必须直连 ASGI 三件套
+        # 纯 ASGI 形状：starlette 1.6 的 Request 没有 .send，必须直连 ASGI 三件套。
+        # 只收 GET：曾经过滤缺失导致 Streamable 客户端的 POST 探测被吞进假 SSE
+        # 流（2026-08-30 联调黑洞），必须立刻 405 让客户端走 /mcp。
+        if scope["method"] != "GET":
+            await send({
+                "type": "http.response.start",
+                "status": 405,
+                "headers": [
+                    (b"content-type", b"text/plain; charset=utf-8"),
+                    (b"allow", b"GET"),
+                    (b"content-length", b"0"),
+                ],
+            })
+            await send({"type": "http.response.body", "body": b""})
+            return
         async with sse.connect_sse(scope, receive, send) as streams:
             await server.run(streams[0], streams[1], server.create_initialization_options())
 
-    class _SSEEndpoint:
+    class _ASGIEndpoint:
         """starlette Route 只把非函数 callable 当原生 ASGI app，包一层类。"""
 
+        def __init__(self, handler):
+            self._handler = handler
+
         async def __call__(self, scope, receive, send):
-            await _handle_sse(scope, receive, send)
+            await self._handler(scope, receive, send)
 
     return Starlette(
         routes=[
-            Route("/sse", endpoint=_SSEEndpoint()),
+            Route("/sse", endpoint=_ASGIEndpoint(_handle_sse)),
             Mount("/messages/", app=sse.handle_post_message),
+            Route("/mcp", endpoint=_ASGIEndpoint(streamable.handle_request)),
         ],
+        lifespan=_lifespan,
     )
 
 
@@ -170,6 +202,6 @@ def run(transport: str = "stdio", host: str = "127.0.0.1", port: int = 8765) -> 
     elif transport == "sse":
         import uvicorn
 
-        uvicorn.run(build_sse_app(), host=host, port=port)
+        uvicorn.run(build_http_app(), host=host, port=port)
     else:
         raise ValueError(f"unknown transport: {transport}")

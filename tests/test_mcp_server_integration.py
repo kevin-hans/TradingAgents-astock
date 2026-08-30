@@ -66,8 +66,9 @@ class TestDispatch:
 
     @pytest.mark.asyncio
     async def test_advise_bad_kyc_raises_validation(self):
+        # q1 数值合法性住 CLI（薄壳透传）；MCP 层只挡类型违约
         with pytest.raises(Exception):
-            await dispatch_tool("advise", {"ticker": "000001", "kyc_answers": {"q1": 4}})
+            await dispatch_tool("advise", {"ticker": "000001", "kyc_answers": {"q1": [4]}})
 
     @pytest.mark.asyncio
     async def test_scenario_missing_ticker_raises_validation(self):
@@ -189,3 +190,47 @@ class TestReviewEndToEnd:
         assert result["items"] == []
         assert result["skipped"] == []
         assert "generated_at" in result
+
+
+class TestHttpApp:
+    """HTTP 传输 app：legacy SSE + Streamable HTTP 并存，/sse 只收 GET。"""
+
+    def test_routes_mounted(self):
+        from tradingagents.mcp.server import build_http_app
+
+        app = build_http_app()
+        paths = {getattr(r, "path", None) for r in app.routes}
+        assert "/sse" in paths
+        assert "/messages" in paths  # Mount 的 path 属性不带尾斜杠
+        assert "/mcp" in paths
+
+    def test_post_to_sse_rejected_405(self):
+        """非 GET 打 /sse 必须立刻 405——曾经不筛方法导致 Streamable 客户端
+        的 POST 探测被吞进假 SSE 流（2026-08-30 联调黑洞）。"""
+        from starlette.testclient import TestClient
+        from tradingagents.mcp.server import build_http_app
+
+        with TestClient(build_http_app()) as client:
+            r = client.post("/sse", content=b"{}")
+            assert r.status_code == 405
+            r2 = client.delete("/sse")
+            assert r2.status_code == 405
+
+    def test_mcp_initialize_json_response(self):
+        """Streamable HTTP：POST /mcp initialize → 直接 JSON 响应 + 会话头。"""
+        from starlette.testclient import TestClient
+        from tradingagents.mcp.server import build_http_app
+
+        with TestClient(build_http_app()) as client:
+            r = client.post("/mcp", json={
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "0"},
+                },
+            }, headers={"Accept": "application/json, text/event-stream"})
+            assert r.status_code == 200
+            body = r.json()
+            assert body["result"]["serverInfo"]["name"] == "tradingagents"
+            assert "mcp-session-id" in {k.lower() for k in r.headers.keys()}

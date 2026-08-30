@@ -180,3 +180,59 @@ def sse_mcp(tmp_artifacts_env, unused_tcp_port):
             await proc.wait()
 
     return _factory
+
+
+@pytest.fixture
+def http_mcp(tmp_artifacts_env, unused_tcp_port):
+    """Return an async context-manager factory yielding an initialised MCP
+    ClientSession over Streamable HTTP transport (/mcp endpoint, JSON responses).
+
+    Same subprocess shape as sse_mcp — one server process serves both
+    /sse (legacy) and /mcp (streamable). Same task-bound enter/exit rule.
+    """
+    pytest.importorskip("mcp")
+    pytest.importorskip("pytest_asyncio")
+    import asyncio
+    import contextlib
+    import httpx
+    from mcp.client.session import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    port = unused_tcp_port
+    base_url = f"http://127.0.0.1:{port}"
+    mcp_url = f"{base_url}/mcp"
+
+    @contextlib.asynccontextmanager
+    async def _factory():
+        proc = await asyncio.create_subprocess_exec(
+            _tradingagents_cli(),
+            "mcp-serve", "--transport", "sse", "--port", str(port),
+            env={**os.environ},
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            started = False
+            async with httpx.AsyncClient() as http:
+                for _ in range(25):  # 25 × 0.2 s = 5 s max
+                    try:
+                        # GET /mcp 无会话头会被 streamable 层秒拒 400（完整响应），
+                        # 400 恰好证明 uvicorn 在服务——别探 /sse（流式响应永不完成）
+                        r = await http.get(f"{base_url}/mcp", timeout=0.5)
+                        if r.status_code < 500:
+                            started = True
+                            break
+                    except Exception:
+                        pass
+                    await asyncio.sleep(0.2)
+            if not started:
+                pytest.skip("HTTP server did not start in time")
+            async with streamable_http_client(mcp_url) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    yield session
+        finally:
+            proc.terminate()
+            await proc.wait()
+
+    return _factory

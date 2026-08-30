@@ -25,16 +25,23 @@ python -m venv .venv
 .venv/bin/tradingagents mcp-serve --transport stdio
 ```
 
-**SSE（远程，小设备客户端连服务器）**：
+**HTTP（远程，小设备客户端连服务器）**：
 
 ```bash
 .venv/bin/tradingagents mcp-serve --transport sse --host 0.0.0.0 --port 8765
 ```
 
-SSE 端点为 `http://<host>:<port>/sse`。实现基于 starlette + uvicorn（mcp 传递
-依赖，无需另装）。注意：starlette 1.6 的 `Request` 没有 `.send`，本项目用纯
-ASGI 三件套接 `SseServerTransport.connect_sse`——升级 starlette/mcp 时若 SSE
-路由行为异常，先查这段（`tradingagents/mcp/server.py` 的 `build_sse_app`）。
+一个进程同时挂两套 HTTP 传输（`tradingagents/mcp/server.py` 的 `build_http_app`）：
+
+| 端点 | 传输 | 说明 |
+|---|---|---|
+| `http://<host>:<port>/mcp` | **Streamable HTTP（推荐）** | POST 直接回 JSON（`json_response=True`），无空闲 SSE 流脆弱性——KYC 问卷这种人机长间隔交互必须用这个 |
+| `http://<host>:<port>/sse` | legacy SSE | GET 建流 + POST `/messages/?session_id=`；仅收 GET（非 GET 返 405），为老客户端保留 |
+
+实现基于 starlette + uvicorn（mcp 传递依赖，无需另装）。注意：starlette 1.6 的
+`Request` 没有 `.send`，本项目用纯 ASGI 三件套接 `SseServerTransport.connect_sse`
+与 `StreamableHTTPSessionManager.handle_request`——升级 starlette/mcp 时若路由
+行为异常，先查这段。
 
 ## 客户端接入
 
@@ -42,10 +49,12 @@ ASGI 三件套接 `SseServerTransport.connect_sse`——升级 starlette/mcp 时
 
 ```bash
 picoclaw mcp add tradingagents \
-  --transport sse \
-  --url http://<server-ip>:8765/sse
+  --transport streamable-http \
+  --url http://<server-ip>:8765/mcp
 picoclaw mcp test tradingagents   # 应发现 6 个工具
 ```
+
+（老版 PicoClaw 只支持 SSE 时用 `--transport sse --url http://<server-ip>:8765/sse`。）
 
 **Claude Code / Claude Desktop**（stdio，客户端同机）：
 

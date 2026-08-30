@@ -100,9 +100,9 @@ deepseek-v4-flash 等模型在 tool call 时可能返回中文股票名而非 6 
 ### 测试
 **干净 clone（`pip install -e .` 不带 `[agentsdk]` / `[dev]` / `[mcp]`）跑 `pytest
 tests/` 应当 **0 failed**（mcp/pytest-asyncio 守卫的测试文件整体 skip）。装了 `[dev]`
-的仓库 venv 是 633 passed / 1 skipped（P2 顾问引擎 + P3+ MCP 集成 + P3 review 巡检 +
-P4 MCP e2e（stdio+SSE 各 9 例，零 LLM，复用 600519/2026-08-30 制品）2026-08-30 交付
-后基线）。出现 failed 就是真回归。**
+的仓库 venv 是 658 passed / 1 skipped（P2 顾问引擎 + P3+ MCP 集成 + P3 review 巡检 +
+P4 MCP e2e（stdio/SSE/Streamable HTTP 三传输，零 LLM，复用 600519/2026-08-30 制品）
+2026-08-30 交付后基线）。出现 failed 就是真回归。**
 需要可选依赖的用例用 `requires_sdk` 标记或 `pytest.importorskip` 守卫跳过——⚠️
 **占位类型绝不要用 `Exception` 基类**：`ClaudeSDKError` 曾被占位成 `Exception`，进
 `_FALLBACK_ERRORS` 后让"订阅凭据失效不得降级到计费 provider"这条护栏彻底失效
@@ -162,11 +162,18 @@ MCP 层无业务代码漂移。`tradingagents/mcp/` 下**不得 import `tradinga
 `--depth` 映射：`quick`=全分析师+1轮辩论、`analyst`=单分析师（需 `--single-analyst`）、
 `full`=全分析师+3轮辩论。`--date YYYY-MM-DD` 指定分析日期（默认当天）。
 同日制品守卫在无头模式返回 `{"error":"artifacts_exist"}` 而非交互式 prompt。
-部署文档 `docs/mcp-deployment.md`。`advise`/`review` 的 `kyc_answers` **可选**：
+部署文档 `docs/mcp-deployment.md`。HTTP 传输一个进程双端点：`/mcp`（Streamable
+HTTP，`json_response=True`，**推荐**——POST 直回 JSON，无空闲流脆弱性）与
+`/sse`（legacy，仅收 GET，非 GET 返 405——曾因不筛方法把 Streamable 客户端的
+POST 探测吞进假 SSE 流）。`advise`/`review` 的 `kyc_answers` **可选**：
 省略 → CLI 读已存档画像（`TRADINGAGENTS_PROFILE` 可覆盖路径），无存档返回
 `kyc_required` 且 payload 内嵌完整问卷（宿主模型问完用户带答案重调）。
 **别把它改回必填**——MCP 层靠这条错误契约实现无头问卷交互，schema 必填会让
-缺参直接变 `internal` 错误，问卷流程就断了。
+缺参直接变 `internal` 错误，问卷流程就断了。KYC 答案容错归一化住 advisor 层
+（`types.py`）：选项 value (3/5/7/9) 原样、序号 1/2/4 与带圈 ①-④ 映射到 value、
+数字 3 二义只按 value 解释（2026-08-30 联调事故：客户端发 ④③③③② 全军覆没）；
+`TestQuestionnaireLadderGuard` 锁定"所有题选项 value 都是升序 3/5/7/9"这一归一化
+前提——改问卷值序必须同步归一化表。
 
 ### 待处理 PR
 - PR #18（hejingchi）：start_date 功能 + 主题切换 + Windows 字体。不建议直接 merge（与 v0.2.6 冲突），start_date 功能值得后续自行实现。
