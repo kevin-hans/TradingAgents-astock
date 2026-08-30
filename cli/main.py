@@ -1572,5 +1572,30 @@ def kyc_questionnaire(
                 console.print(f"  [{opt.value}] {opt.label}")
 
 
+@app.command("mcp-serve")
+def mcp_serve(
+    transport: str = typer.Option(
+        "stdio", "--transport", help="传输方式：stdio（本地）/ sse（远程 HTTP+SSE）",
+    ),
+    host: str = typer.Option("127.0.0.1", "--host", help="sse 监听地址"),
+    port: int = typer.Option(8765, "--port", help="sse 监听端口"),
+):
+    """启动 MCP server（暴露 6 个工具供 MCP 客户端调用）。
+
+    需要安装 [mcp] extra：pip install -e .[mcp]
+    ⚠️ v1 无鉴权：公网暴露必须自配反向代理/VPN，详见 docs/mcp-deployment.md。
+    """
+    if transport not in ("stdio", "sse"):
+        console.print(f"[red]unknown transport: {transport}（可选 stdio / sse）[/red]")
+        raise typer.Exit(code=2)
+    try:
+        from tradingagents.mcp.server import run as _run_mcp
+    except ImportError as e:
+        console.print(f"[red]mcp SDK 未安装：{e}[/red]")
+        console.print("安装：pip install -e .[mcp]")
+        raise typer.Exit(code=1)
+    _run_mcp(transport=transport, host=host, port=port)
+
+
 if __name__ == "__main__":
     app()
