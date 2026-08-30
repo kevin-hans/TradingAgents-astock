@@ -39,6 +39,13 @@ class TestAnalyzeEstimate:
         r = _run("analyze", "--json", "--depth", "bogus")
         assert r.returncode != 0
 
+    def test_json_confirm_returns_not_implemented(self):
+        """--json + --confirm v1 返 exit 5 + not_implemented（run_analysis 未支持结构化返回）。"""
+        r = _run("analyze", "--json", "--confirm")
+        assert r.returncode == 5
+        payload = json.loads(r.stdout)
+        assert payload["error"] == "not_implemented"
+
 
 class TestAnalyzeDefaultCompat:
     def test_help_still_lists_analyze(self):
