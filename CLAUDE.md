@@ -100,7 +100,7 @@ deepseek-v4-flash 等模型在 tool call 时可能返回中文股票名而非 6 
 ### 测试
 **干净 clone（`pip install -e .` 不带 `[agentsdk]` / `[dev]` / `[mcp]`）跑 `pytest
 tests/` 应当 **0 failed**（mcp/pytest-asyncio 守卫的测试文件整体 skip）。装了 `[dev]`
-的仓库 venv 是 658 passed / 1 skipped（P2 顾问引擎 + P3+ MCP 集成 + P3 review 巡检 +
+的仓库 venv 是 662 passed / 1 skipped（P2 顾问引擎 + P3+ MCP 集成 + P3 review 巡检 +
 P4 MCP e2e（stdio/SSE/Streamable HTTP 三传输，零 LLM，复用 600519/2026-08-30 制品）
 2026-08-30 交付后基线）。出现 failed 就是真回归。**
 需要可选依赖的用例用 `requires_sdk` 标记或 `pytest.importorskip` 守卫跳过——⚠️

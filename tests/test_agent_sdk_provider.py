@@ -618,3 +618,59 @@ def test_tuple_messages_are_not_silently_emptied():
     system, user = _split_prompt([("system", "SYS"), ("human", "USER")])
     assert system == "SYS"
     assert "USER" in user
+
+
+# --------------------------------------------------------------------------- #
+# env-var overrides (default_config) + structured-output max_turns
+# --------------------------------------------------------------------------- #
+
+def test_agent_sdk_env_overrides_honored():
+    """环境变量覆盖走子进程隔离：DEFAULT_CONFIG 在 import 时求值，
+    同进程 reload 会把其它模块早前拿到的引用变成孤儿。"""
+    import subprocess
+
+    code = (
+        "import os\n"
+        "os.environ['DEEP_THINK_PROVIDER_OVERRIDE']='claude_agent_sdk'\n"
+        "os.environ['QUICK_THINK_PROVIDER_OVERRIDE']='claude_agent_sdk'\n"
+        "os.environ['AGENT_SDK_MODEL']='sonnet'\n"
+        "os.environ['AGENT_SDK_QUICK_MODEL']='opus'\n"
+        "from tradingagents.default_config import DEFAULT_CONFIG as c\n"
+        "print(c['deep_think_provider_override'], c['quick_think_provider_override'],"
+        " c['agent_sdk_model'], c['agent_sdk_quick_model'])\n"
+    )
+    r = subprocess.run([".venv/bin/python", "-c", code],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "claude_agent_sdk claude_agent_sdk sonnet opus"
+
+
+@requires_sdk
+def test_build_options_structured_output_needs_three_turns():
+    """结构化输出内部走 tool_use 往返（call→回喂→收尾），max_turns=1 只够
+    前半步，重试报 "Reached maximum number of turns (1)"——修复回归锁。"""
+    client = ClaudeAgentSDKClient("opus")
+    opts = client._build_options(system_prompt=None, output_format={"type": "object"})
+    assert opts.max_turns == 3
+
+
+@requires_sdk
+def test_build_options_plain_completion_keeps_one_turn():
+    client = ClaudeAgentSDKClient("opus")
+    opts = client._build_options(system_prompt=None)
+    assert opts.max_turns == 1
+
+
+@requires_sdk
+def test_build_options_tools_path_not_downgraded_by_output_format():
+    """带 sdk_tools 的分析师路径保持 _TOOL_MAX_TURNS，不被 output_format 分支
+    覆盖成 3。"""
+    sdk_tools = mod._sdk_tools_from_langchain([_FakeLangChainTool()])
+    client = ClaudeAgentSDKClient("opus")
+    opts = client._build_options(
+        system_prompt=None,
+        output_format={"type": "object"},
+        sdk_tools=sdk_tools,
+        tool_names=["get_thing"],
+    )
+    assert opts.max_turns == mod._TOOL_MAX_TURNS

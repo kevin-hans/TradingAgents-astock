@@ -476,6 +476,13 @@ class ClaudeAgentSDKClient(BaseLLMClient):
             opts["system_prompt"] = system_prompt
         if output_format is not None:
             opts["output_format"] = output_format
+            # JSON schema structured output uses an internal tool_use turn pair
+            # (model emits tool_call → SDK feeds result back → model finalises).
+            # max_turns=1 only allows the first half, causing "Reached maximum
+            # number of turns (1)" on the retry step. 3 turns is enough for
+            # the two-step pattern with one contingency turn.
+            if not sdk_tools:  # analyst paths already set _TOOL_MAX_TURNS above
+                opts["max_turns"] = 3
         return ClaudeAgentOptions(**opts)
 
     async def _query(self, prompt: str, options, prefer_result: bool = False):
