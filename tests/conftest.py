@@ -1,6 +1,9 @@
 """Shared pytest fixtures that prevent CI hangs when API keys are absent."""
 
 import os
+import shutil
+import socket
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -40,3 +43,77 @@ def mock_llm_client():
         return_value=client,
     ):
         yield client
+
+
+# ── MCP e2e helpers ────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def unused_tcp_port() -> int:
+    """Return a free TCP port by binding and releasing it."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
+@pytest.fixture
+def tmp_artifacts_env(tmp_path):
+    """Copy real 600519/2026-08-30 artifacts to tmp_path and point TRADINGAGENTS_RESULTS_DIR there.
+
+    Each test gets a fresh writable copy; the real log directory is never touched.
+    """
+    src = os.path.expanduser("~/.tradingagents/logs/600519")
+    dst = tmp_path / "logs" / "600519"
+    shutil.copytree(src, dst)
+    results_dir = str(tmp_path / "logs")
+    prev = os.environ.get("TRADINGAGENTS_RESULTS_DIR")
+    os.environ["TRADINGAGENTS_RESULTS_DIR"] = results_dir
+    yield results_dir
+    if prev is None:
+        os.environ.pop("TRADINGAGENTS_RESULTS_DIR", None)
+    else:
+        os.environ["TRADINGAGENTS_RESULTS_DIR"] = prev
+
+
+def _tradingagents_cli() -> str:
+    """Resolve the repo venv CLI entry, falling back to PATH."""
+    venv_cli = Path(__file__).parent.parent / ".venv" / "bin" / "tradingagents"
+    if venv_cli.exists():
+        return str(venv_cli)
+    found = shutil.which("tradingagents")
+    if found:
+        return found
+    pytest.skip("tradingagents CLI entry point not found")
+
+
+@pytest.fixture
+def stdio_mcp(tmp_artifacts_env):
+    """Return an async context-manager factory yielding an initialised MCP
+    ClientSession over stdio transport (real `tradingagents mcp-serve` subprocess).
+
+    Tests must enter it inside their own body (`async with stdio_mcp() as s:`).
+    Anyio cancel scopes are task-bound, so entering/exiting in the test's task
+    is what keeps teardown clean — pytest-asyncio finalises async-generator
+    fixtures in a different task and would otherwise blow up on exit.
+
+    Requires [dev] extra (mcp, pytest-asyncio).
+    """
+    pytest.importorskip("mcp")
+    pytest.importorskip("pytest_asyncio")
+    import contextlib
+    from mcp.client.session import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+
+    @contextlib.asynccontextmanager
+    async def _factory():
+        params = StdioServerParameters(
+            command=_tradingagents_cli(),
+            args=["mcp-serve", "--transport", "stdio"],
+            env={**os.environ},
+        )
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                yield session
+
+    return _factory
