@@ -38,7 +38,6 @@ class ReviewArgs(BaseModel):
 
 class AnalyzeArgs(BaseModel):
     ticker: str
-    date: Optional[str] = None
     depth: Literal["quick", "analyst", "full"] = "full"
     confirm: bool = False
     single_analyst: Optional[str] = None

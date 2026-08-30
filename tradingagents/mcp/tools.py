@@ -93,7 +93,7 @@ async def review_tool(args: ReviewArgs) -> dict[str, Any]:
 
 async def analyze_tool(args: AnalyzeArgs) -> dict[str, Any]:
     """触发多 Agent 分析（estimate 或 confirm 两相）。"""
-    argv = ["analyze", "--json", "--depth", args.depth]
+    argv = ["analyze", args.ticker, "--json", "--depth", args.depth]
     if args.confirm:
         argv += ["--confirm"]
     if args.force:

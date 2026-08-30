@@ -1322,6 +1322,7 @@ def _default(
     if ctx.invoked_subcommand is not None:
         return
     analyze(
+        ticker=None,
         checkpoint=checkpoint,
         clear_checkpoints=clear_checkpoints,
         force=force,
@@ -1344,6 +1345,7 @@ def _estimate_analyze(depth: str) -> dict:
 
 @app.command()
 def analyze(
+    ticker: Optional[str] = typer.Argument(None, help="A 股 6 位代码；不给则走交互式选取"),
     checkpoint: bool = typer.Option(
         False,
         "--checkpoint",

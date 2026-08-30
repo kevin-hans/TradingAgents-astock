@@ -56,3 +56,10 @@ class TestAnalyzeDefaultCompat:
         )
         assert r.returncode == 0
         assert "analyze" in r.stdout
+
+    def test_positional_ticker_accepted_in_estimate_mode(self):
+        """CLI analyze 现在接受可选位置 ticker（v1 用于 MCP 兼容，交互式内部依然收 ticker）。"""
+        r = _run("analyze", "000001", "--json", "--depth", "full")
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["mode"] == "estimate"

@@ -129,6 +129,7 @@ async def test_analyze_estimate_mode():
     assert "--confirm" not in argv
     assert "--depth" in argv
     assert "full" in argv
+    assert "000001" in argv
     assert result["estimated_llm_calls"] == 47
 
 
@@ -142,6 +143,7 @@ async def test_analyze_confirm_mode():
         ))
     argv = m.call_args[0][0]
     assert "--confirm" in argv
+    assert "000001" in argv
 
 
 @pytest.mark.asyncio
@@ -153,6 +155,7 @@ async def test_analyze_with_single_analyst():
     argv = m.call_args[0][0]
     assert "--single-analyst" in argv
     assert "fundamental" in argv
+    assert "000001" in argv
 
 
 @pytest.mark.asyncio
@@ -163,3 +166,4 @@ async def test_analyze_with_force():
         ))
     argv = m.call_args[0][0]
     assert "--force" in argv
+    assert "000001" in argv
