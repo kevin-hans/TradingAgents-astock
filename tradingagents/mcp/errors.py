@@ -13,6 +13,7 @@ MCP_ERROR_KYC_REQUIRED = "kyc_required"
 MCP_ERROR_INTERNAL = "internal"
 MCP_ERROR_NOT_IMPLEMENTED = "not_implemented"
 MCP_ERROR_ARTIFACT_EXISTS = "artifact_exists"
+MCP_ERROR_PARTIAL_DATA = "partial_data_failure"
 
 
 @dataclass
@@ -28,6 +29,7 @@ _CODE_MAP = {
     3: MCP_ERROR_KYC_REQUIRED,
     4: MCP_ERROR_INTERNAL,
     5: MCP_ERROR_NOT_IMPLEMENTED,
+    6: MCP_ERROR_PARTIAL_DATA,
 }
 
 

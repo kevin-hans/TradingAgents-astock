@@ -33,6 +33,12 @@ class TestMapCLIError:
         err = map_cli_error(255, b"segfault or something")
         assert err.code == MCP_ERROR_INTERNAL
 
+    def test_exit_code_6_partial_data(self):
+        from tradingagents.mcp.errors import MCP_ERROR_PARTIAL_DATA
+
+        err = map_cli_error(6, b'{"items": [], "skipped": [{"reason": "quote_failed"}]}')
+        assert err.code == MCP_ERROR_PARTIAL_DATA
+
     def test_malformed_stderr_still_returns_internal(self):
         err = map_cli_error(1, b"not json at all")
         # 无 payload.error 时 fallback 到 exit code 映射 (1 → not_found)

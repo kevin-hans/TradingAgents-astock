@@ -166,3 +166,19 @@ class TestScenarioEndToEnd:
         monkeypatch.setenv("HOME", str(tmp_path))
         result = await dispatch_tool("scenario", {"ticker": "000001"})
         assert result["ticker"] == "000001"
+
+
+class TestReviewEndToEnd:
+    @pytest.mark.asyncio
+    async def test_review_tool_via_real_cli(self, tmp_path, monkeypatch):
+        """review 工具 subprocess 调真 CLI（空 pending 路径零网络）。"""
+        monkeypatch.setenv("TRADINGAGENTS_MEMORY_LOG_PATH",
+                           str(tmp_path / "nonexistent.md"))
+        monkeypatch.setenv("TRADINGAGENTS_REPORTS_DIR", str(tmp_path / "reports"))
+        monkeypatch.setenv("HOME", str(tmp_path))
+        result = await dispatch_tool("review", {
+            "kyc_answers": {"q1": 7, "q2": 7, "q3": 7, "q4": 7, "q5": 7},
+        })
+        assert result["items"] == []
+        assert result["skipped"] == []
+        assert "generated_at" in result
