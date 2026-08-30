@@ -1484,5 +1484,24 @@ def reports(
             console.print(f"{e['ticker']}  {e['date']}  {e['path']}")
 
 
+@app.command("kyc-questionnaire")
+def kyc_questionnaire(
+    json_out: bool = typer.Option(False, "--json", help="输出 JSON"),
+):
+    """输出 5 题 KYC 问卷（供客户端首次建档使用）。"""
+    import json as _json
+
+    from tradingagents.advisor.questionnaire import get_questionnaire
+
+    q = get_questionnaire()
+    if json_out:
+        console.print_json(_json.dumps(q.model_dump(), ensure_ascii=False))
+    else:
+        for question in q.questions:
+            console.print(f"[bold]{question.id}[/bold] {question.text}")
+            for opt in question.options:
+                console.print(f"  [{opt.value}] {opt.label}")
+
+
 if __name__ == "__main__":
     app()
