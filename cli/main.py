@@ -1321,7 +1321,25 @@ def _default(
     """
     if ctx.invoked_subcommand is not None:
         return
-    analyze(checkpoint=checkpoint, clear_checkpoints=clear_checkpoints, force=force)
+    analyze(
+        checkpoint=checkpoint,
+        clear_checkpoints=clear_checkpoints,
+        force=force,
+        json_out=False,
+        depth="full",
+        confirm=False,
+        single_analyst=None,
+    )
+
+
+def _estimate_analyze(depth: str) -> dict:
+    """Lookup table: estimated LLM calls and wall-clock seconds per depth level."""
+    table = {
+        "quick": {"calls": 5, "seconds": 30},
+        "analyst": {"calls": 10, "seconds": 120},
+        "full": {"calls": 47, "seconds": 480},
+    }
+    return table[depth]
 
 
 @app.command()
@@ -1341,11 +1359,60 @@ def analyze(
         "--force",
         help="跳过同日研报守卫，重跑并归档旧制品。",
     ),
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        help="JSON 输出（机器消费）；无 --confirm 时输出报价估算。",
+    ),
+    depth: str = typer.Option(
+        "full",
+        "--depth",
+        help="分析深度：quick / analyst / full",
+    ),
+    confirm: bool = typer.Option(
+        False,
+        "--confirm",
+        help="真正执行分析（重活）；否则只返报价。",
+    ),
+    single_analyst: Optional[str] = typer.Option(
+        None,
+        "--single-analyst",
+        help="depth=analyst 时指定角色：fundamental / news / policy / ...",
+    ),
 ):
+    import json as _json
+
+    if depth not in ("quick", "analyst", "full"):
+        console.print(f"[red]invalid depth: {depth}[/red]")
+        raise typer.Exit(code=2)
+
+    # Estimate mode: --json without --confirm
+    if json_out and not confirm:
+        estimate = _estimate_analyze(depth)
+        console.print_json(_json.dumps({
+            "mode": "estimate",
+            "depth": depth,
+            "estimated_llm_calls": estimate["calls"],
+            "estimated_seconds": estimate["seconds"],
+            "note": "call again with --confirm to execute",
+        }, ensure_ascii=False))
+        raise typer.Exit(code=0)
+
+    # Real execution path
     if clear_checkpoints:
         from tradingagents.graph.checkpointer import clear_all_checkpoints
         n = clear_all_checkpoints(DEFAULT_CONFIG["data_cache_dir"])
         console.print(f"[yellow]Cleared {n} checkpoint(s).[/yellow]")
+
+    if json_out:
+        # --json + --confirm: not yet implemented (run_analysis doesn't return structured output)
+        console.print_json(_json.dumps({
+            "error": "not_implemented",
+            "message": "analyze --json --confirm 完整执行需 run_analysis 支持结构化返回；请去掉 --json 交互跑",
+        }, ensure_ascii=False))
+        raise typer.Exit(code=5)
+
+    # Original interactive path
     run_analysis(checkpoint=checkpoint, force=force)
 
 
