@@ -68,16 +68,16 @@ picoclaw mcp test tradingagents   # 应发现 6 个工具
 | `kyc_questionnaire()` | 秒 | 返回 5 题 KYC 问卷（首次建档） |
 | `scenario(ticker, [date])` | 秒 | 原始情景分布（bull/base/bear + key_levels），读 scenario artifact |
 | `advise(ticker, kyc_answers, [date])` | 秒 | 个性化建议（KYC 答案 inline 传） |
-| `review(kyc_answers)` | 秒 | 决策纪律巡检（P3 分期，CLI 返 not_implemented，stub 已就位） |
+| `review(kyc_answers)` | 秒 | 决策纪律巡检（止损/目标/期限/证伪/新鲜度；部分行情失败返回 `partial_data_failure`） |
 | `analyze(ticker, [depth], [confirm])` | 报价秒 / 执行分钟级 | 两相：`confirm=false` 只返报价；`confirm=true` 才真跑 |
 
 **首次建档流程**：客户端调 `advise` 不带 `kyc_answers` → 收 `kyc_required`
 错误（内嵌完整问卷）→ 客户端向用户收集 5 题答案本地存储 → 之后每次调用 inline
 传。校准公式（γ_eff / HC / H_avail）只住服务端，客户端永不复刻。
 
-**当前已知边界**：`review` 属 P3 分期未实现，CLI stub 返回 `not_implemented`
-（exit 5）——这是预期行为，P3 交付时只改 CLI、MCP 层零改动（薄壳的好处）。
-`scenario` 已交付（读 scenario artifact，无对应文件时返回 `not_found`）。
+**当前已知边界**：`review` 需服务端能访问腾讯行情与新浪 K 线（拉现价和分析日
+收盘）；行情不通的条目落入 `skipped`（`quote_failed`），exit 6。无 scenario
+制品的 pending 决策标 `no_scenario` 跳过（属数据边界，不算失败）。
 
 ## 安全
 

@@ -99,8 +99,8 @@ deepseek-v4-flash 等模型在 tool call 时可能返回中文股票名而非 6 
 
 ### 测试
 **干净 clone（`pip install -e .` 不带 `[agentsdk]` / `[dev]` / `[mcp]`）跑 `pytest
-tests/` 应当是 574 passed / 1 skipped / **0 failed**（P2 顾问引擎 + P3+ MCP 集成
-2026-08-30 交付后基线）。出现 failed 就是真回归。**
+tests/` 应当是 603 passed / 1 skipped / **0 failed**（P2 顾问引擎 + P3+ MCP 集成 +
+P3 review 巡检 2026-08-30 交付后基线）。出现 failed 就是真回归。**
 需要可选依赖的用例用 `requires_sdk` 标记或 `pytest.importorskip` 守卫跳过——⚠️
 **占位类型绝不要用 `Exception` 基类**：`ClaudeSDKError` 曾被占位成 `Exception`，进
 `_FALLBACK_ERRORS` 后让"订阅凭据失效不得降级到计费 provider"这条护栏彻底失效
@@ -154,9 +154,9 @@ MCP 层无业务代码漂移。`tradingagents/mcp/` 下**不得 import `tradinga
 
 已交付（2026-08-30）：`tradingagents/mcp/`（server + 6 工具 + cli_runner + schemas
 + errors，stdio/sse 双传输）+ CLI `mcp-serve` / `reports` / `kyc-questionnaire` /
-`analyze --json --confirm` 两相。已知边界：`scenario` / `review` 两个 CLI 命令
-未实现（属 P2 后续/P3），对应 MCP 工具透传 CLI 的 not-implemented 错误，属预期
-行为不是回归。部署文档 `docs/mcp-deployment.md`。
+`scenario` / `review` 巡检（`advisor/review.py`，exit 6=部分行情失败）/ `analyze
+--json --confirm` 两相。已知边界：`analyze --json --confirm` 真执行需 run_analysis
+结构化返回（暂返 not_implemented）。部署文档 `docs/mcp-deployment.md`。
 
 ### 待处理 PR
 - PR #18（hejingchi）：start_date 功能 + 主题切换 + Windows 字体。不建议直接 merge（与 v0.2.6 冲突），start_date 功能值得后续自行实现。
