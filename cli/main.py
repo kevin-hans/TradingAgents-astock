@@ -1330,6 +1330,7 @@ def _default(
         depth="full",
         confirm=False,
         single_analyst=None,
+        date=None,
     )
 
 
@@ -1341,6 +1342,123 @@ def _estimate_analyze(depth: str) -> dict:
         "full": {"calls": 47, "seconds": 480},
     }
     return table[depth]
+
+
+_ALL_ANALYST_KEYS = ["market", "social", "news", "fundamentals", "policy", "hot_money", "lockup"]
+
+
+def _depth_to_config(
+    depth: str, single_analyst: Optional[str]
+) -> tuple[list[str], int]:
+    """Map ``--depth`` / ``--single-analyst`` to (analyst_keys, debate_rounds).
+
+    Returns:
+        (analyst_keys, debate_rounds) where *debate_rounds* controls both
+        ``max_debate_rounds`` and ``max_risk_discuss_rounds`` in the config.
+    """
+    if depth == "quick":
+        return list(_ALL_ANALYST_KEYS), 1
+    if depth == "analyst":
+        if not single_analyst:
+            raise typer.BadParameter(
+                "--single-analyst is required when --depth=analyst"
+            )
+        if single_analyst not in _ALL_ANALYST_KEYS:
+            raise typer.BadParameter(
+                f"unknown analyst '{single_analyst}'; "
+                f"choose from: {', '.join(_ALL_ANALYST_KEYS)}"
+            )
+        return [single_analyst], 0
+    # depth == "full"
+    return list(_ALL_ANALYST_KEYS), 3
+
+
+def run_analysis_headless(
+    ticker: str,
+    analysis_date: str,
+    analyst_keys: list[str],
+    debate_rounds: int,
+    force: bool = False,
+    checkpoint: bool = False,
+) -> dict:
+    """Non-interactive analysis pipeline — returns a structured result dict.
+
+    Modelled after :func:`web.runner._run` but synchronous and without Rich TUI.
+    The caller is responsible for JSON-serialising the return value.
+    """
+    import json as _json
+
+    config = DEFAULT_CONFIG.copy()
+    config["max_debate_rounds"] = debate_rounds
+    config["max_risk_discuss_rounds"] = debate_rounds
+    config["checkpoint_enabled"] = checkpoint
+
+    # Same-day guard — headless mode never prompts; return an error envelope.
+    if not force:
+        artifacts = existing_artifacts(
+            config["results_dir"], ticker, analysis_date
+        )
+        if artifacts:
+            return {
+                "error": "artifacts_exist",
+                "message": (
+                    f"{ticker} 在 {analysis_date} 已有研报制品"
+                    f"（{', '.join(p.name for p in artifacts)}）。"
+                    "加 --force 重跑。"
+                ),
+                "artifacts": [str(p) for p in artifacts],
+            }
+
+    stats_handler = StatsCallbackHandler()
+    graph = TradingAgentsGraph(
+        analyst_keys,
+        config=config,
+        debug=False,
+        callbacks=[stats_handler],
+    )
+
+    start_time = time.time()
+
+    try:
+        init_state, args, _ = graph.prepare_graph_run(
+            ticker, analysis_date, callbacks=[stats_handler]
+        )
+
+        last_chunk: dict = {}
+        for chunk in graph.graph.stream(init_state, **args):
+            last_chunk = chunk
+
+        if not last_chunk:
+            return {
+                "error": "empty_result",
+                "message": "分析没有返回任何结果，请清理断点后重试。",
+            }
+
+        rating = graph.finalize_graph_run(ticker, analysis_date, last_chunk)
+
+        elapsed = round(time.time() - start_time, 1)
+        stats = stats_handler.get_stats()
+
+        return {
+            "mode": "result",
+            "ticker": ticker,
+            "analysis_date": analysis_date,
+            "rating": rating,
+            "final_trade_decision": last_chunk.get("final_trade_decision", ""),
+            "scenario_tree": last_chunk.get("scenario_tree"),
+            "stats": {
+                "llm_calls": stats["llm_calls"],
+                "tool_calls": stats["tool_calls"],
+                "tokens_in": stats["tokens_in"],
+                "tokens_out": stats["tokens_out"],
+                "elapsed_seconds": elapsed,
+            },
+            "artifacts_dir": str(
+                Path(config["results_dir"]) / ticker / analysis_date
+            ),
+        }
+    finally:
+        graph.close_graph_run()
 
 
 @app.command()
@@ -1381,6 +1499,11 @@ def analyze(
         "--single-analyst",
         help="depth=analyst 时指定角色：fundamental / news / policy / ...",
     ),
+    date: Optional[str] = typer.Option(
+        None,
+        "--date",
+        help="分析日期 YYYY-MM-DD；默认当天。仅 --json --confirm 时使用。",
+    ),
 ):
     import json as _json
 
@@ -1407,12 +1530,46 @@ def analyze(
         console.print(f"[yellow]Cleared {n} checkpoint(s).[/yellow]")
 
     if json_out:
-        # --json + --confirm: not yet implemented (run_analysis doesn't return structured output)
-        console.print_json(_json.dumps({
-            "error": "not_implemented",
-            "message": "analyze --json --confirm 完整执行需 run_analysis 支持结构化返回；请去掉 --json 交互跑",
-        }, ensure_ascii=False))
-        raise typer.Exit(code=5)
+        # --json + --confirm: headless execution
+        if not ticker:
+            console.print_json(_json.dumps({
+                "error": "missing_ticker",
+                "message": "analyze --json --confirm 需要指定 ticker（位置参数）。",
+            }, ensure_ascii=False))
+            raise typer.Exit(code=2)
+
+        try:
+            analyst_keys, debate_rounds = _depth_to_config(depth, single_analyst)
+        except typer.BadParameter as exc:
+            console.print_json(_json.dumps({
+                "error": "bad_parameter",
+                "message": str(exc),
+            }, ensure_ascii=False))
+            raise typer.Exit(code=2)
+
+        analysis_date = date or datetime.date.today().isoformat()
+
+        try:
+            result = run_analysis_headless(
+                ticker=ticker,
+                analysis_date=analysis_date,
+                analyst_keys=analyst_keys,
+                debate_rounds=debate_rounds,
+                force=force,
+                checkpoint=checkpoint,
+            )
+            result["depth"] = depth
+            console.print_json(_json.dumps(result, ensure_ascii=False, default=str))
+            exit_code = 0 if "error" not in result else 1
+            raise typer.Exit(code=exit_code)
+        except typer.Exit:
+            raise
+        except Exception as exc:
+            console.print_json(_json.dumps({
+                "error": "execution_failed",
+                "message": str(exc),
+            }, ensure_ascii=False))
+            raise typer.Exit(code=1)
 
     # Original interactive path
     run_analysis(checkpoint=checkpoint, force=force)

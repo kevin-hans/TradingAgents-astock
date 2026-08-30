@@ -155,8 +155,12 @@ MCP 层无业务代码漂移。`tradingagents/mcp/` 下**不得 import `tradinga
 已交付（2026-08-30）：`tradingagents/mcp/`（server + 6 工具 + cli_runner + schemas
 + errors，stdio/sse 双传输）+ CLI `mcp-serve` / `reports` / `kyc-questionnaire` /
 `scenario` / `review` 巡检（`advisor/review.py`，exit 6=部分行情失败）/ `analyze
---json --confirm` 两相。已知边界：`analyze --json --confirm` 真执行需 run_analysis
-结构化返回（暂返 not_implemented）。部署文档 `docs/mcp-deployment.md`。
+--json --confirm` 两相。`analyze --json --confirm` 通过 `run_analysis_headless()` 真
+执行无头管线并返回结构化 JSON（`mode: "result"`、`rating`、`stats` 等）。
+`--depth` 映射：`quick`=全分析师+1轮辩论、`analyst`=单分析师（需 `--single-analyst`）、
+`full`=全分析师+3轮辩论。`--date YYYY-MM-DD` 指定分析日期（默认当天）。
+同日制品守卫在无头模式返回 `{"error":"artifacts_exist"}` 而非交互式 prompt。
+部署文档 `docs/mcp-deployment.md`。
 
 ### 待处理 PR
 - PR #18（hejingchi）：start_date 功能 + 主题切换 + Windows 字体。不建议直接 merge（与 v0.2.6 冲突），start_date 功能值得后续自行实现。
