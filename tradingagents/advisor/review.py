@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel
 
 from tradingagents.advisor.scenario_io import ScenarioArtifact
+from tradingagents.advisor.types import InvestorVector
 from tradingagents.agents.schemas import ScenarioBucket
 
 
@@ -107,4 +108,95 @@ def build_review_item(
         p0=p0,
         checks=checks,
         falsification=falsification,
+    )
+
+
+def _memory_config() -> dict:
+    import os
+    return {"memory_log_path": os.environ.get(
+        "TRADINGAGENTS_MEMORY_LOG_PATH",
+        os.path.join(os.path.expanduser("~"), ".tradingagents",
+                     "memory", "trading_memory.md"),
+    )}
+
+
+def _default_quotes(codes):
+    from tradingagents.dataflows.a_stock import _tencent_quote
+    return _tencent_quote(codes)
+
+
+def _default_p0(ticker, trade_date):
+    from tradingagents.agents.utils.scenario_check import fetch_p0
+    return fetch_p0(ticker, trade_date)
+
+
+def run_review(
+    quotes_provider=None,
+    p0_provider=None,
+    vector: Optional[InvestorVector] = None,
+    today: Optional[date] = None,
+) -> ReviewReport:
+    """扫 pending 决策 → 拉现价/p0 → 逐条检查。
+
+    quotes/p0 provider 缺省走真数据源（tencent / fetch_p0），测试注入 fake。
+    skipped: quote_failed（行情拉不到）或 no_scenario（无 scenario 制品）。
+    """
+    from tradingagents.agents.utils.memory import TradingMemoryLog
+
+    from tradingagents.advisor.engine import advise as _engine_advise
+    from tradingagents.advisor.scenario_io import (
+        ScenarioNotFoundError,
+        load_scenario,
+    )
+    from tradingagents.advisor.types import AdvisorConfig
+
+    today = today or date.today()
+    quotes_fn = quotes_provider or _default_quotes
+    p0_fn = p0_provider or _default_p0
+
+    log = TradingMemoryLog(_memory_config())
+    pending = log.get_pending_entries()
+    if not pending:
+        return ReviewReport(generated_at=today.isoformat(), items=[],
+                            skipped=[], manual_checklist=[])
+
+    tickers = sorted({e["ticker"] for e in pending})
+    try:
+        quotes = quotes_fn(tickers)
+    except Exception:
+        quotes = {}
+
+    items: list[ReviewItem] = []
+    skipped: list[SkippedItem] = []
+    checklist: list[str] = []
+
+    for entry in pending:
+        ticker, entry_date = entry["ticker"], entry["date"]
+        try:
+            artifact = load_scenario(ticker, date=entry_date)
+        except ScenarioNotFoundError:
+            skipped.append(SkippedItem(ticker=ticker, date=entry_date,
+                                       reason="no_scenario"))
+            continue
+        q = quotes.get(ticker)
+        if not q or not q.get("price"):
+            skipped.append(SkippedItem(ticker=ticker, date=entry_date,
+                                       reason="quote_failed"))
+            continue
+        p0 = p0_fn(ticker, entry_date)
+        item = build_review_item(entry, artifact, price=q["price"], p0=p0, today=today)
+        if vector is not None:
+            for i, bucket in enumerate(artifact.scenario_buckets):
+                if item.checks[i].stop_triggered:
+                    result = _engine_advise(
+                        bucket, vector, AdvisorConfig(),
+                        ticker=ticker, date=entry_date, rating=artifact.rating,
+                    )
+                    item.checks[i].w_star_hint = result.trace.w_star
+        items.append(item)
+        checklist.extend(item.falsification)
+
+    return ReviewReport(
+        generated_at=today.isoformat(),
+        items=items, skipped=skipped, manual_checklist=checklist,
     )

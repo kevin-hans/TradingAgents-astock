@@ -131,3 +131,128 @@ class TestBuildReviewItem:
             entry, _artifact(), price=8.9, p0=10.0, today=date(2026, 8, 30),
         )
         assert item.checks[0].stop_triggered is True
+
+
+import json
+from pathlib import Path
+
+from tradingagents.advisor.review import run_review
+from tradingagents.advisor.types import InvestorVector
+
+
+def _write_memory_log(tmp_path: Path, entries_md: str) -> Path:
+    log = tmp_path / "memory" / "trading_memory.md"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(entries_md, encoding="utf-8")
+    return log
+
+
+_PENDING_MD = """[2026-08-01 | 000001 | Buy | pending]
+
+DECISION:
+buy some
+
+<!-- ENTRY_END -->
+
+[2026-08-01 | 600000 | Sell | pending]
+
+DECISION:
+sell some
+
+<!-- ENTRY_END -->
+"""
+
+
+class TestRunReview:
+    def _env(self, tmp_path: Path, monkeypatch, md: str = _PENDING_MD):
+        log = _write_memory_log(tmp_path, md)
+        reports = tmp_path / "reports"
+        reports.mkdir(exist_ok=True)
+        monkeypatch.setenv("TRADINGAGENTS_MEMORY_LOG_PATH", str(log))
+        monkeypatch.setenv("TRADINGAGENTS_REPORTS_DIR", str(reports))
+        return reports
+
+    def _write_artifact(self, reports: Path, ticker="000001",
+                        date_str="2026-08-01", stop=9.0, target=12.0):
+        (reports / f"scenario_{ticker}_{date_str}.json").write_text(json.dumps({
+            "version": 1, "ticker": ticker, "trade_date": date_str, "rating": "Buy",
+            "scenario_buckets": [{
+                "horizon_months": 6,
+                "scenarios": [
+                    {"name": "bull", "thesis": "t", "expected_return": 0.25, "prob": 0.35},
+                    {"name": "base", "thesis": "t", "expected_return": 0.05, "prob": 0.45},
+                    {"name": "bear", "thesis": "t", "expected_return": -0.15, "prob": 0.20},
+                ],
+                "key_levels": {"stop": stop, "entry_low": 9.5, "entry_high": 10.5,
+                               "target": target},
+            }],
+            "falsification": {"conditions": ["watch X"]},
+        }), encoding="utf-8")
+
+    def test_full_flow_with_fakes(self, tmp_path, monkeypatch):
+        reports = self._env(tmp_path, monkeypatch)
+        self._write_artifact(reports)
+        vector = InvestorVector(gamma_eff=5.0, hc=0.7, h_avail_months=60.0)
+        report = run_review(
+            quotes_provider=lambda codes: {"000001": {"price": 8.9}},
+            p0_provider=lambda t, d: 10.0,
+            vector=vector,
+            today=date(2026, 8, 30),
+        )
+        assert len(report.items) == 1
+        item = report.items[0]
+        assert item.ticker == "000001"
+        assert item.checks[0].stop_triggered is True
+        assert item.checks[0].w_star_hint is not None
+        assert len(report.skipped) == 1
+        assert report.skipped[0].reason == "no_scenario"
+        assert report.manual_checklist == ["watch X"]
+
+    def test_quote_failed_skips_item(self, tmp_path, monkeypatch):
+        reports = self._env(tmp_path, monkeypatch)
+        self._write_artifact(reports)
+        report = run_review(
+            quotes_provider=lambda codes: {},
+            p0_provider=lambda t, d: None,
+            vector=None,
+            today=date(2026, 8, 30),
+        )
+        assert report.items == []
+        assert {s.reason for s in report.skipped} == {"quote_failed", "no_scenario"}
+
+    def test_no_vector_no_w_hint(self, tmp_path, monkeypatch):
+        reports = self._env(tmp_path, monkeypatch)
+        self._write_artifact(reports)
+        report = run_review(
+            quotes_provider=lambda codes: {"000001": {"price": 8.9}},
+            p0_provider=lambda t, d: 10.0,
+            vector=None,
+            today=date(2026, 8, 30),
+        )
+        assert report.items[0].checks[0].stop_triggered is True
+        assert report.items[0].checks[0].w_star_hint is None
+
+    def test_no_pending_empty_report(self, tmp_path, monkeypatch):
+        self._env(tmp_path, monkeypatch, md="(empty log)\n")
+        report = run_review(
+            quotes_provider=lambda codes: {},
+            p0_provider=lambda t, d: None,
+            vector=None,
+            today=date(2026, 8, 30),
+        )
+        assert report.items == []
+        assert report.skipped == []
+        assert report.manual_checklist == []
+
+    def test_w_hint_zero_when_horizon_mismatch(self, tmp_path, monkeypatch):
+        """止损触发但桶期限 6 月 > H_avail 3 月 → 引擎硬门 → hint=0。"""
+        reports = self._env(tmp_path, monkeypatch)
+        self._write_artifact(reports)
+        vector = InvestorVector(gamma_eff=5.0, hc=0.7, h_avail_months=3.0)
+        report = run_review(
+            quotes_provider=lambda codes: {"000001": {"price": 8.9}},
+            p0_provider=lambda t, d: 10.0,
+            vector=vector,
+            today=date(2026, 8, 30),
+        )
+        assert report.items[0].checks[0].w_star_hint == 0.0
