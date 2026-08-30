@@ -5,15 +5,17 @@ CLAUDE.md 薄壳方针：本文件只 import 第三方 (pydantic) + 标准库 (t
 """
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class KYCAnswersIn(BaseModel):
-    q1: Literal[3, 5, 7, 9]
-    q2: Literal[3, 5, 7, 9]
-    q3: Literal[3, 5, 7, 9]
-    q4: Literal[3, 5, 7, 9]
-    q5: Literal[3, 5, 7, 9]
+    """薄壳：MCP 层不解释答案语义（value/序号/带圈都透传），归一化住 CLI。"""
+
+    q1: int | str = Field(description="选项 value (3/5/7/9)；序号 1-4 或 ①-④ 亦可，服务端归一化")
+    q2: int | str = Field(description="选项 value (3/5/7/9)；序号 1-4 或 ①-④ 亦可，服务端归一化")
+    q3: int | str = Field(description="选项 value (3/5/7/9)；序号 1-4 或 ①-④ 亦可，服务端归一化")
+    q4: int | str = Field(description="选项 value (3/5/7/9)；序号 1-4 或 ①-④ 亦可，服务端归一化")
+    q5: int | str = Field(description="选项 value (3/5/7/9)；序号 1-4 或 ①-④ 亦可，服务端归一化")
     schema_version: Literal[1] = 1
 
 

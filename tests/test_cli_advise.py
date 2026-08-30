@@ -91,9 +91,34 @@ class TestAdviseJSON:
         payload = json.loads(r.stdout)
         assert payload["ticker"] == "000001"
 
+    def test_kyc_circled_answers_success(self, tmp_env):
+        # 2026-08-30 联调事故回归：客户端发选项序号（带圈）而非 value
+        _write_scenario(tmp_env)
+        kyc = json.dumps({"q1": "④", "q2": "③", "q3": "③", "q4": "③", "q5": "②"})
+        r = _run(tmp_env, "advise", "000001", "--json", "--kyc-json", kyc)
+        assert r.returncode == 0, f"stderr={r.stderr}\nstdout={r.stdout}"
+        payload = json.loads(r.stdout)
+        assert payload["ticker"] == "000001"
+        assert payload["trace"]["gamma_eff"] > 0
+
+    def test_kyc_ordinal_ints_success(self, tmp_env):
+        _write_scenario(tmp_env)
+        kyc = json.dumps({"q1": 1, "q2": 2, "q3": 4, "q4": 1, "q5": 2})
+        r = _run(tmp_env, "advise", "000001", "--json", "--kyc-json", kyc)
+        assert r.returncode == 0, f"stderr={r.stderr}\nstdout={r.stdout}"
+
     def test_invalid_kyc_json(self, tmp_env):
         _write_scenario(tmp_env)
-        r = _run(tmp_env, "advise", "000001", "--json", "--kyc-json", '{"q1": 4}')
+        r = _run(tmp_env, "advise", "000001", "--json", "--kyc-json", '{"q1": 6}')
+        assert r.returncode == 2
+        payload = json.loads(r.stdout)
+        assert payload["error"] == "invalid_kyc"
+
+    def test_invalid_kyc_fifth_circled(self, tmp_env):
+        # 每题只有 4 个选项，⑤ 是无效答案
+        _write_scenario(tmp_env)
+        kyc = json.dumps({"q1": "⑤", "q2": "③", "q3": "③", "q4": "③", "q5": "②"})
+        r = _run(tmp_env, "advise", "000001", "--json", "--kyc-json", kyc)
         assert r.returncode == 2
         payload = json.loads(r.stdout)
         assert payload["error"] == "invalid_kyc"

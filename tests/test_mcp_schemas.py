@@ -16,9 +16,11 @@ class TestKYCAnswersIn:
         a = KYCAnswersIn(q1=7, q2=5, q3=7, q4=7, q5=7)
         assert a.q1 == 7
 
-    def test_reject_invalid_value(self):
-        with pytest.raises(ValidationError):
-            KYCAnswersIn(q1=4, q2=5, q3=7, q4=7, q5=7)
+    def test_ordinal_passes_through_to_cli(self):
+        # 薄壳：MCP 层不解释答案语义（序号/带圈/值都透传，CLI 归一化）
+        a = KYCAnswersIn(q1=4, q2="③", q3=7, q4=7, q5=7)
+        assert a.q1 == 4
+        assert a.q2 == "③"
 
 
 class TestToolArgs:

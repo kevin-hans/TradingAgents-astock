@@ -18,13 +18,60 @@ class TestKYCAnswers:
         assert ans.q1 == 7
         assert ans.schema_version == 1
 
+    def test_canonical_values_pass_through(self):
+        ans = KYCAnswers(q1=3, q2=5, q3=7, q4=9, q5=3)
+        assert (ans.q1, ans.q2, ans.q3, ans.q4, ans.q5) == (3, 5, 7, 9, 3)
+
+    def test_ordinal_ints_normalize(self):
+        # 序号 1/2/4 与值集 {3,5,7,9} 无交集，安全按序号归一
+        ans = KYCAnswers(q1=1, q2=2, q3=4, q4=1, q5=2)
+        assert (ans.q1, ans.q2, ans.q3, ans.q4, ans.q5) == (3, 5, 9, 3, 5)
+
+    def test_circled_digits_normalize(self):
+        # 带圈字符一律按序号解释（①→3 ②→5 ③→7 ④→9）
+        ans = KYCAnswers(q1="①", q2="②", q3="③", q4="④", q5="③")
+        assert (ans.q1, ans.q2, ans.q3, ans.q4, ans.q5) == (3, 5, 7, 9, 7)
+
+    def test_digit_strings_normalize(self):
+        ans = KYCAnswers(q1="4", q2="3", q3="5", q4="7", q5="9")
+        assert (ans.q1, ans.q2, ans.q3, ans.q4, ans.q5) == (9, 3, 5, 7, 9)
+
+    def test_incident_regression_circled_answers(self):
+        # 2026-08-30 联调事故：客户端把选项序号 ④③③③② 当答案发来
+        ans = KYCAnswers(q1="④", q2="③", q3="③", q4="③", q5="②")
+        assert (ans.q1, ans.q2, ans.q3, ans.q4, ans.q5) == (9, 7, 7, 7, 5)
+
+    def test_ambiguous_three_interpreted_as_value(self):
+        # 3 同时是合法 value 与序号 3 —— 一律按 value 解释（文档写明）
+        ans = KYCAnswers(q1=3, q2=3, q3=3, q4=3, q5=3)
+        assert ans.q1 == 3
+
     def test_reject_invalid_value(self):
         with pytest.raises(ValidationError):
-            KYCAnswers(q1=4, q2=5, q3=7, q4=7, q5=7)  # 4 not in {3,5,7,9}
+            KYCAnswers(q1=6, q2=5, q3=7, q4=7, q5=7)  # 6 不是 value 也不是序号
+
+    def test_reject_fifth_circled(self):
+        with pytest.raises(ValidationError):
+            KYCAnswers(q1="⑤", q2=5, q3=7, q4=7, q5=7)  # 每题只有 4 个选项
+
+    def test_reject_non_numeric_string(self):
+        with pytest.raises(ValidationError):
+            KYCAnswers(q1="加仓", q2=5, q3=7, q4=7, q5=7)
 
     def test_reject_missing_field(self):
         with pytest.raises(ValidationError):
             KYCAnswers(q1=7, q2=5, q3=7, q4=7)  # q5 missing
+
+
+class TestQuestionnaireLadderGuard:
+    def test_all_questions_share_canonical_ladder(self):
+        """序号归一化依赖所有题的选项 value 都是升序 3/5/7/9。
+        加新题或改值序时必须同步 types.py 的归一化表。"""
+        from tradingagents.advisor.questionnaire import get_questionnaire
+
+        for q in get_questionnaire().questions:
+            values = [opt.value for opt in q.options]
+            assert values == [3, 5, 7, 9], f"{q.id} 的选项 value 阶梯变了: {values}"
 
 
 class TestInvestorVector:

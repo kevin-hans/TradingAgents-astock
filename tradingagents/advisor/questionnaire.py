@@ -19,6 +19,8 @@ class Questionnaire(BaseModel):
     questions: list[KYCQuestion]
     note: str = (
         "客户端本地存 KYC 原始答案，每次调用 advise/review 时 inline 传给服务端。"
+        "答案传所选选项的 value 字段（3/5/7/9）；服务端容错接受序号 1-4 与 ①-④"
+        "（数字 3 二义，只按 value 解释）。"
         "服务端负责校准（γ_eff / HC / H_avail 公式住 advisor/calibrate.py）。"
     )
 

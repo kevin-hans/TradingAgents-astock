@@ -59,7 +59,8 @@ class TestReviewCLI:
         assert len(payload["questionnaire"]["questions"]) == 5
 
     def test_invalid_kyc_exit_2(self, tmp_env):
-        r = _run("review", "--json", "--kyc-json", '{"q1":4}')
+        # 4 是合法序号（归一化为 9），非法样本用 6
+        r = _run("review", "--json", "--kyc-json", '{"q1":6}')
         assert r.returncode == 2
         assert json.loads(r.stdout)["error"] == "invalid_kyc"
 
