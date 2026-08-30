@@ -109,3 +109,26 @@ async def test_analyze_same_day_guard(stdio_mcp):
         assert result.is_error
         data = _parse(result)
         assert data.get("error") == "artifacts_exist"
+
+
+# ── error path ────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_unknown_tool_returns_error(stdio_mcp):
+    async with stdio_mcp() as session:
+        result = await session.call_tool("nonexistent_tool", {})
+        assert result.is_error
+        data = _parse(result)
+        assert data.get("error") == "unknown_tool"
+
+
+@pytest.mark.asyncio
+async def test_advise_missing_kyc_raises(stdio_mcp):
+    # kyc_answers is a required field in AdviseArgs — omitting it triggers
+    # a pydantic ValidationError caught by on_call_tool's generic handler.
+    async with stdio_mcp() as session:
+        result = await session.call_tool("advise", {"ticker": TICKER})
+        assert result.is_error
+        data = _parse(result)
+        assert "error" in data
