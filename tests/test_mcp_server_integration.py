@@ -139,3 +139,30 @@ class TestBuildServer:
         from tradingagents.mcp import server as srv
         with _pytest.raises(ValueError):
             srv.run(transport="carrier-pigeon")
+
+
+class TestScenarioEndToEnd:
+    @pytest.mark.asyncio
+    async def test_scenario_tool_via_real_cli(self, tmp_path, monkeypatch):
+        """scenario 工具 subprocess 调真 CLI（不再 mock run_cli），验证 argv 契约成立。"""
+        import json as _json
+        reports = tmp_path / "reports"
+        reports.mkdir()
+        (reports / "scenario_000001_2026-08-30.json").write_text(_json.dumps({
+            "version": 1, "ticker": "000001", "trade_date": "2026-08-30",
+            "rating": "Buy",
+            "scenario_buckets": [{
+                "horizon_months": 6,
+                "scenarios": [
+                    {"name": "bull", "thesis": "t", "expected_return": 0.25, "prob": 0.35},
+                    {"name": "base", "thesis": "t", "expected_return": 0.05, "prob": 0.45},
+                    {"name": "bear", "thesis": "t", "expected_return": -0.15, "prob": 0.20},
+                ],
+                "key_levels": {"stop": 8.5, "entry_low": 9.5, "entry_high": 10.5, "target": 12.5},
+            }],
+            "falsification": {"conditions": ["c"]},
+        }), encoding="utf-8")
+        monkeypatch.setenv("TRADINGAGENTS_REPORTS_DIR", str(reports))
+        monkeypatch.setenv("HOME", str(tmp_path))
+        result = await dispatch_tool("scenario", {"ticker": "000001"})
+        assert result["ticker"] == "000001"

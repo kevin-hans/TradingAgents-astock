@@ -66,18 +66,18 @@ picoclaw mcp test tradingagents   # 应发现 6 个工具
 |---|---|---|
 | `reports([ticker])` | 秒 | 列出可用研报 |
 | `kyc_questionnaire()` | 秒 | 返回 5 题 KYC 问卷（首次建档） |
-| `scenario(ticker, [date])` | 秒 | 原始情景分布（bull/base/bear + key_levels）⚠️ 依赖 `scenario` CLI 命令，未交付 |
+| `scenario(ticker, [date])` | 秒 | 原始情景分布（bull/base/bear + key_levels），读 scenario artifact |
 | `advise(ticker, kyc_answers, [date])` | 秒 | 个性化建议（KYC 答案 inline 传） |
-| `review(kyc_answers)` | 秒 | 决策纪律巡检 ⚠️ 依赖 `review` CLI 命令（P3），未交付 |
+| `review(kyc_answers)` | 秒 | 决策纪律巡检（P3 分期，CLI 返 not_implemented，stub 已就位） |
 | `analyze(ticker, [depth], [confirm])` | 报价秒 / 执行分钟级 | 两相：`confirm=false` 只返报价；`confirm=true` 才真跑 |
 
 **首次建档流程**：客户端调 `advise` 不带 `kyc_answers` → 收 `kyc_required`
 错误（内嵌完整问卷）→ 客户端向用户收集 5 题答案本地存储 → 之后每次调用 inline
 传。校准公式（γ_eff / HC / H_avail）只住服务端，客户端永不复刻。
 
-**当前已知边界**：`scenario` / `review` 两个 CLI 命令尚未实现（分属 P2 后续与
-P3 分期），对应 MCP 工具会返回 CLI 的 not-implemented 错误——这是预期行为，
-命令交付后自动可用，MCP 层无需改动（薄壳的好处）。
+**当前已知边界**：`review` 属 P3 分期未实现，CLI stub 返回 `not_implemented`
+（exit 5）——这是预期行为，P3 交付时只改 CLI、MCP 层零改动（薄壳的好处）。
+`scenario` 已交付（读 scenario artifact，无对应文件时返回 `not_found`）。
 
 ## 安全
 

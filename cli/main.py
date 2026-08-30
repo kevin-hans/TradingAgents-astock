@@ -1572,6 +1572,59 @@ def kyc_questionnaire(
                 console.print(f"  [{opt.value}] {opt.label}")
 
 
+@app.command()
+def scenario(
+    ticker: str = typer.Argument(..., help="A 股 6 位代码"),
+    date: Optional[str] = typer.Option(None, "--date", help="分析日 (YYYY-MM-DD)；缺省取最新"),
+    json_out: bool = typer.Option(False, "--json", help="输出 JSON（机器消费）"),
+):
+    """输出原始情景分布（bull/base/bear 概率 + key_levels + 证伪条件）。"""
+    import json as _json
+
+    from tradingagents.advisor.scenario_io import ScenarioNotFoundError, load_scenario
+
+    try:
+        artifact = load_scenario(ticker, date=date)
+    except ScenarioNotFoundError as e:
+        console.print_json(_json.dumps(
+            {"error": "not_found", "message": str(e)}, ensure_ascii=False,
+        ))
+        raise typer.Exit(code=1)
+    if json_out:
+        console.print_json(_json.dumps(artifact.model_dump(), ensure_ascii=False))
+    else:
+        console.print(f"[bold]{artifact.ticker} {artifact.trade_date} 评级 {artifact.rating}[/bold]")
+        for b in artifact.scenario_buckets:
+            console.print(f"桶 {b.horizon_months} 月:")
+            for s in b.scenarios:
+                console.print(f"  {s.name:<5} {s.expected_return:+.0%} @ {s.prob:.0%}")
+        if artifact.falsification:
+            console.print("证伪条件:")
+            for c in artifact.falsification.conditions:
+                console.print(f"  - {c}")
+
+
+@app.command()
+def review(
+    json_out: bool = typer.Option(False, "--json", help="输出 JSON"),
+    kyc_json: Optional[str] = typer.Option(
+        None, "--kyc-json",
+        help="inline KYC 答案 JSON（P3 交付后生效）",
+    ),
+):
+    """决策纪律巡检（止损/目标/期限/证伪）。P3 分期功能，当前未实现。"""
+    import json as _json
+
+    console.print_json(_json.dumps(
+        {
+            "error": "not_implemented",
+            "message": "review 巡检属 P3 分期，尚未交付；本 stub 仅占位错误契约",
+        },
+        ensure_ascii=False,
+    ))
+    raise typer.Exit(code=5)
+
+
 @app.command("mcp-serve")
 def mcp_serve(
     transport: str = typer.Option(
