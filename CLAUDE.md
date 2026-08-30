@@ -99,13 +99,14 @@ deepseek-v4-flash 等模型在 tool call 时可能返回中文股票名而非 6 
 
 ### 测试
 **干净 clone（`pip install -e .` 不带 `[agentsdk]` / `[dev]` / `[mcp]`）跑 `pytest
-tests/` 应当是 494 passed / 1 skipped / **0 failed**（P2 顾问引擎 2026-08-30 交付
-后基线）。出现 failed 就是真回归。**
+tests/` 应当是 568 passed / 1 skipped / **0 failed**（P2 顾问引擎 + P3+ MCP 集成
+2026-08-30 交付后基线）。出现 failed 就是真回归。**
 需要可选依赖的用例用 `requires_sdk` 标记或 `pytest.importorskip` 守卫跳过——⚠️
 **占位类型绝不要用 `Exception` 基类**：`ClaudeSDKError` 曾被占位成 `Exception`，进
 `_FALLBACK_ERRORS` 后让"订阅凭据失效不得降级到计费 provider"这条护栏彻底失效
 （v0.5.4 修）。hypothesis property 测试住 `tests/test_advisor_engine_properties.py`，
-装 `[dev]` extra 后才跑，未装则整个文件 skip。
+pytest-asyncio 测试（mcp cli_runner / tools / server）用 `pytest.importorskip`
+守卫——装 `[dev]` extra 后才跑，未装则 skip。
 
 ### CLI 必须保住裸跑（v0.5.9 血的教训）
 `cli/main.py` 里的 `@app.callback(invoke_without_command=True)` **不能删**。Typer 只
@@ -146,9 +147,16 @@ tests/` 应当是 494 passed / 1 skipped / **0 failed**（P2 顾问引擎 2026-0
 
 实现形态强制走 **subprocess 调 CLI**（不是 import CLI 函数）——进程边界物理保证
 MCP 层无业务代码漂移。`tradingagents/mcp/` 下**不得 import `tradingagents.advisor` /
-`tradingagents.graph` / `tradingagents.dataflows` 等业务模块**，有静态守卫测试拦。
+`tradingagents.graph` / `tradingagents.dataflows` 等业务模块**，AST 静态守卫测试
+（`tests/test_mcp_thin_shell_guard.py`）逐文件扫描强制。
 此方针优先级高于减少 subprocess 开销等性能考量。设计与实现细节见
 `docs/superpowers/specs/2026-08-29-picoclaw-mcp-integration.md`。
+
+已交付（2026-08-30）：`tradingagents/mcp/`（server + 6 工具 + cli_runner + schemas
++ errors，stdio/sse 双传输）+ CLI `mcp-serve` / `reports` / `kyc-questionnaire` /
+`analyze --json --confirm` 两相。已知边界：`scenario` / `review` 两个 CLI 命令
+未实现（属 P2 后续/P3），对应 MCP 工具透传 CLI 的 not-implemented 错误，属预期
+行为不是回归。部署文档 `docs/mcp-deployment.md`。
 
 ### 待处理 PR
 - PR #18（hejingchi）：start_date 功能 + 主题切换 + Windows 字体。不建议直接 merge（与 v0.2.6 冲突），start_date 功能值得后续自行实现。
