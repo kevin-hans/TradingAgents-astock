@@ -28,12 +28,12 @@ class ScenarioArgs(BaseModel):
 
 class AdviseArgs(BaseModel):
     ticker: str
-    kyc_answers: KYCAnswersIn
+    kyc_answers: Optional[KYCAnswersIn] = None
     date: Optional[str] = None
 
 
 class ReviewArgs(BaseModel):
-    kyc_answers: KYCAnswersIn
+    kyc_answers: Optional[KYCAnswersIn] = None
 
 
 class AnalyzeArgs(BaseModel):

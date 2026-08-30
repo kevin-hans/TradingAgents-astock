@@ -106,6 +106,38 @@ async def test_advise_error_raises_tool_error():
 
 
 @pytest.mark.asyncio
+async def test_advise_without_kyc_omits_flag():
+    """缺 kyc_answers → 不传 --kyc-json，让 CLI 走 profile/kyc_required 分支"""
+    with patch.object(tools, "run_cli", AsyncMock(return_value=_mock_ok(
+        {"ticker": "000001", "with_position": {}},
+    ))) as m:
+        await tools.advise_tool(AdviseArgs(ticker="000001"))
+    argv = m.call_args[0][0]
+    assert argv[0] == "advise"
+    assert "--json" in argv
+    assert "--kyc-json" not in argv
+
+
+@pytest.mark.asyncio
+async def test_advise_kyc_required_carries_questionnaire():
+    """CLI 无画像时 exit 3，payload 内嵌问卷——必须原样透传到 ToolError"""
+    err = CLIError(
+        code="kyc_required",
+        message="需要先建立投资者画像",
+        payload={
+            "error": "kyc_required",
+            "message": "需要先建立投资者画像",
+            "questionnaire": {"schema_version": 1, "questions": []},
+        },
+    )
+    with patch.object(tools, "run_cli", AsyncMock(return_value=CLIResult(ok=False, error=err))):
+        with pytest.raises(tools.ToolError) as exc:
+            await tools.advise_tool(AdviseArgs(ticker="000001"))
+    assert exc.value.code == "kyc_required"
+    assert "questionnaire" in exc.value.payload
+
+
+@pytest.mark.asyncio
 async def test_review_passes_kyc():
     kyc = KYCAnswersIn(q1=7, q2=5, q3=7, q4=7, q5=7)
     with patch.object(tools, "run_cli", AsyncMock(return_value=_mock_ok(
@@ -115,6 +147,18 @@ async def test_review_passes_kyc():
     argv = m.call_args[0][0]
     assert argv[0] == "review"
     assert "--kyc-json" in argv
+    assert "--json" in argv
+
+
+@pytest.mark.asyncio
+async def test_review_without_kyc_omits_flag():
+    with patch.object(tools, "run_cli", AsyncMock(return_value=_mock_ok(
+        {"items": []},
+    ))) as m:
+        await tools.review_tool(ReviewArgs())
+    argv = m.call_args[0][0]
+    assert argv[0] == "review"
+    assert "--kyc-json" not in argv
     assert "--json" in argv
 
 

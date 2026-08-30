@@ -61,18 +61,26 @@ def tmp_artifacts_env(tmp_path):
     """Copy real 600519/2026-08-30 artifacts to tmp_path and point TRADINGAGENTS_RESULTS_DIR there.
 
     Each test gets a fresh writable copy; the real log directory is never touched.
+    TRADINGAGENTS_PROFILE also points to a nonexistent path so advise-without-kyc
+    deterministically returns kyc_required regardless of the host machine's profile.
     """
     src = os.path.expanduser("~/.tradingagents/logs/600519")
     dst = tmp_path / "logs" / "600519"
     shutil.copytree(src, dst)
     results_dir = str(tmp_path / "logs")
-    prev = os.environ.get("TRADINGAGENTS_RESULTS_DIR")
+    prev_results = os.environ.get("TRADINGAGENTS_RESULTS_DIR")
     os.environ["TRADINGAGENTS_RESULTS_DIR"] = results_dir
+    prev_profile = os.environ.get("TRADINGAGENTS_PROFILE")
+    os.environ["TRADINGAGENTS_PROFILE"] = str(tmp_path / "nonexistent_profile.json")
     yield results_dir
-    if prev is None:
+    if prev_results is None:
         os.environ.pop("TRADINGAGENTS_RESULTS_DIR", None)
     else:
-        os.environ["TRADINGAGENTS_RESULTS_DIR"] = prev
+        os.environ["TRADINGAGENTS_RESULTS_DIR"] = prev_results
+    if prev_profile is None:
+        os.environ.pop("TRADINGAGENTS_PROFILE", None)
+    else:
+        os.environ["TRADINGAGENTS_PROFILE"] = prev_profile
 
 
 def _tradingagents_cli() -> str:

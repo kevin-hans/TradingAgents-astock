@@ -124,11 +124,12 @@ async def test_unknown_tool_returns_error(stdio_mcp):
 
 
 @pytest.mark.asyncio
-async def test_advise_missing_kyc_raises(stdio_mcp):
-    # kyc_answers is a required field in AdviseArgs — omitting it triggers
-    # a pydantic ValidationError caught by on_call_tool's generic handler.
+async def test_advise_missing_kyc_returns_questionnaire(stdio_mcp):
+    # no kyc_answers + no saved profile → kyc_required error embedding the
+    # questionnaire, so the host model can ask the user and retry.
     async with stdio_mcp() as session:
         result = await session.call_tool("advise", {"ticker": TICKER})
         assert result.is_error
         data = _parse(result)
-        assert "error" in data
+        assert data.get("error") == "kyc_required"
+        assert "questionnaire" in data

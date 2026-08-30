@@ -12,6 +12,9 @@ class ProfileNotFoundError(FileNotFoundError):
 
 
 def _profile_path() -> Path:
+    override = os.getenv("TRADINGAGENTS_PROFILE")
+    if override:
+        return Path(override)
     return Path(os.path.expanduser("~")) / ".tradingagents" / "profile.json"
 
 

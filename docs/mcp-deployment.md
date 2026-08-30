@@ -67,8 +67,8 @@ picoclaw mcp test tradingagents   # 应发现 6 个工具
 | `reports([ticker])` | 秒 | 列出可用研报 |
 | `kyc_questionnaire()` | 秒 | 返回 5 题 KYC 问卷（首次建档） |
 | `scenario(ticker, [date])` | 秒 | 原始情景分布（bull/base/bear + key_levels），读 scenario artifact |
-| `advise(ticker, kyc_answers, [date])` | 秒 | 个性化建议（KYC 答案 inline 传） |
-| `review(kyc_answers)` | 秒 | 决策纪律巡检（止损/目标/期限/证伪/新鲜度；部分行情失败返回 `partial_data_failure`） |
+| `advise(ticker, [kyc_answers], [date])` | 秒 | 个性化建议；KYC 答案 inline 传，省略则用已存档画像（`~/.tradingagents/profile.json`，可用 `TRADINGAGENTS_PROFILE` 覆盖） |
+| `review([kyc_answers])` | 秒 | 决策纪律巡检（止损/目标/期限/证伪/新鲜度；部分行情失败返回 `partial_data_failure`）；KYC 同上可省略 |
 | `analyze(ticker, [depth], [confirm])` | 报价秒 / 执行分钟级 | 两相：`confirm=false` 只返报价；`confirm=true` 才真跑 |
 
 **首次建档流程**：客户端调 `advise` 不带 `kyc_answers` → 收 `kyc_required`

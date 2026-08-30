@@ -113,9 +113,12 @@ async def test_unknown_tool_returns_error(sse_mcp):
 
 
 @pytest.mark.asyncio
-async def test_advise_missing_kyc_raises(sse_mcp):
+async def test_advise_missing_kyc_returns_questionnaire(sse_mcp):
+    # no kyc_answers + no saved profile → kyc_required error embedding the
+    # questionnaire, so the host model can ask the user and retry.
     async with sse_mcp() as session:
         result = await session.call_tool("advise", {"ticker": TICKER})
         assert result.is_error
         data = _parse(result)
-        assert "error" in data
+        assert data.get("error") == "kyc_required"
+        assert "questionnaire" in data

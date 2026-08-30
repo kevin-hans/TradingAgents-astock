@@ -65,11 +65,9 @@ async def scenario_tool(args: ScenarioArgs) -> dict[str, Any]:
 
 async def advise_tool(args: AdviseArgs) -> dict[str, Any]:
     """结合情景树 + KYC 答案给出个性化投资建议。"""
-    argv = [
-        "advise", args.ticker,
-        "--json",
-        "--kyc-json", json.dumps(args.kyc_answers.model_dump()),
-    ]
+    argv = ["advise", args.ticker, "--json"]
+    if args.kyc_answers is not None:
+        argv += ["--kyc-json", json.dumps(args.kyc_answers.model_dump())]
     if args.date is not None:
         argv += ["--date", args.date]
     result = await run_cli(argv)
@@ -80,11 +78,9 @@ async def advise_tool(args: AdviseArgs) -> dict[str, Any]:
 
 async def review_tool(args: ReviewArgs) -> dict[str, Any]:
     """决策纪律巡检（P3 CLI 到位前返 not_implemented，透传即可）。"""
-    argv = [
-        "review",
-        "--json",
-        "--kyc-json", json.dumps(args.kyc_answers.model_dump()),
-    ]
+    argv = ["review", "--json"]
+    if args.kyc_answers is not None:
+        argv += ["--kyc-json", json.dumps(args.kyc_answers.model_dump())]
     result = await run_cli(argv)
     if not result.ok:
         _raise_from_cli(result.error)

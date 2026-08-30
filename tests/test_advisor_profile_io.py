@@ -16,6 +16,20 @@ def tmp_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
+class TestEnvOverride:
+    def test_profile_env_var_takes_priority(self, tmp_home: Path, monkeypatch: pytest.MonkeyPatch):
+        custom = tmp_home / "custom_profile.json"
+        monkeypatch.setenv("TRADINGAGENTS_PROFILE", str(custom))
+        write_profile(KYCAnswers(q1=7, q2=7, q3=7, q4=7, q5=7))
+        assert custom.exists()
+        assert read_profile().q1 == 7
+
+    def test_missing_env_profile_raises_not_found(self, tmp_home: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("TRADINGAGENTS_PROFILE", str(tmp_home / "nope.json"))
+        with pytest.raises(ProfileNotFoundError):
+            read_profile()
+
+
 class TestWriteRead:
     def test_write_then_read_roundtrip(self, tmp_home: Path):
         ans = KYCAnswers(q1=7, q2=5, q3=7, q4=7, q5=7)

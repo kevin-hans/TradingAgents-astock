@@ -42,12 +42,20 @@ def list_tools_spec() -> list[Tool]:
         ),
         Tool(
             name="advise",
-            description="个性化投资建议。kyc_answers 必填（5 题答案 inline 传）。秒级只读。",
+            description=(
+                "个性化投资建议。优先带 kyc_answers（5 题答案 inline 传）；"
+                "用户没答过问卷时先调 kyc_questionnaire 拿题问用户再重调本工具。"
+                "省略 kyc_answers 则用已存档画像，无存档返回 kyc_required"
+                "（payload 内嵌问卷，问完用户带答案重调）。秒级只读。"
+            ),
             input_schema=AdviseArgs.model_json_schema(),
         ),
         Tool(
             name="review",
-            description="决策纪律巡检（止损/目标/期限）。kyc_answers 必填。",
+            description=(
+                "决策纪律巡检（止损/目标/期限）。优先带 kyc_answers；"
+                "没有时先调 kyc_questionnaire 问用户，或省略以用已存档画像。"
+            ),
             input_schema=ReviewArgs.model_json_schema(),
         ),
         Tool(

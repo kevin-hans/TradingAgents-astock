@@ -33,10 +33,17 @@ class TestListTools:
             assert t.input_schema.get("type") == "object"
             assert t.description
 
-    def test_advise_schema_requires_kyc(self):
+    def test_advise_schema_kyc_optional(self):
         advise = next(t for t in list_tools_spec() if t.name == "advise")
         assert "kyc_answers" in advise.input_schema.get("properties", {})
-        assert "kyc_answers" in advise.input_schema.get("required", [])
+        assert "kyc_answers" not in advise.input_schema.get("required", [])
+
+    def test_advise_description_documents_kyc_flow(self):
+        """描述必须教宿主模型：没答案先问卷问用户，缺档返回 kyc_required 内嵌问卷"""
+        advise = next(t for t in list_tools_spec() if t.name == "advise")
+        assert "kyc_questionnaire" in advise.description
+        review = next(t for t in list_tools_spec() if t.name == "review")
+        assert "kyc_questionnaire" in review.description
 
     def test_kyc_questionnaire_no_params(self):
         kyc = next(t for t in list_tools_spec() if t.name == "kyc_questionnaire")

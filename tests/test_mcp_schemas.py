@@ -32,13 +32,13 @@ class TestToolArgs:
         with pytest.raises(ValidationError):
             AnalyzeArgs(ticker="000001", depth="bogus")
 
-    def test_advise_requires_kyc(self):
-        with pytest.raises(ValidationError):
-            AdviseArgs(ticker="000001")
+    def test_advise_kyc_optional(self):
+        a = AdviseArgs(ticker="000001")
+        assert a.kyc_answers is None
 
-    def test_review_requires_kyc(self):
-        with pytest.raises(ValidationError):
-            ReviewArgs()
+    def test_review_kyc_optional(self):
+        r = ReviewArgs()
+        assert r.kyc_answers is None
 
     def test_scenario_minimal(self):
         s = ScenarioArgs(ticker="000001")
