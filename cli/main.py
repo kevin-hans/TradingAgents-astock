@@ -1582,7 +1582,7 @@ def mcp_serve(
 ):
     """启动 MCP server（暴露 6 个工具供 MCP 客户端调用）。
 
-    需要安装 [mcp] extra：pip install -e .[mcp]
+    需要安装 mcp extra（pip install -e '.\\[mcp]'）。
     ⚠️ v1 无鉴权：公网暴露必须自配反向代理/VPN，详见 docs/mcp-deployment.md。
     """
     if transport not in ("stdio", "sse"):
@@ -1592,7 +1592,7 @@ def mcp_serve(
         from tradingagents.mcp.server import run as _run_mcp
     except ImportError as e:
         console.print(f"[red]mcp SDK 未安装：{e}[/red]")
-        console.print("安装：pip install -e .[mcp]")
+        console.print("安装：pip install -e '.\\[mcp]'")
         raise typer.Exit(code=1)
     _run_mcp(transport=transport, host=host, port=port)
 
