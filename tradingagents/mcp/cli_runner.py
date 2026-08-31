@@ -75,18 +75,11 @@ async def run_cli(argv: list[str], timeout: float = 900.0) -> CLIResult:
     - 超时 → kill + CLIResult(ok=False, error=timeout)
     """
     cmd = _resolve_binary() + list(argv)
-    env = _subprocess_env()
-    # DEBUG: log actual subprocess launch
-    print(
-        f"[cli_runner DEBUG] cmd={cmd!r} "
-        f"PYTHONPATH={env.get('PYTHONPATH', '(unset)')[:200]!r}",
-        file=sys.stderr, flush=True,
-    )
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env=env,
+        env=_subprocess_env(),
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
