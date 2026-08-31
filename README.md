@@ -28,6 +28,7 @@
   <a href="#数据源">数据源</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#web-ui">Web UI</a> ·
+  <a href="#树莓派--无头部署mcp-模式">树莓派 / 无头部署</a> ·
   <a href="#常见问题排错">排错</a>
 </p>
 
@@ -304,6 +305,100 @@ streamlit run web/app.py
 <p align="center">
   <img src="assets/web-ui-welcome.png" width="80%" alt="Web UI 欢迎页"/>
 </p>
+
+---
+
+## 树莓派 / 无头部署（MCP 模式）
+
+在没有显示器的 Linux ARM64 设备（如 Raspberry Pi 3B/4/5）上，推荐用 **MCP server 模式**运行。
+该模式下 `tradingagents` 作为工具服务暴露给 AI 助手（Claude Code、PicoClaw 等 MCP 客户端），无需交互式 CLI 或 Web UI。
+
+### 前提条件
+
+- Python ≥ 3.10（Raspberry Pi OS Trixie/Bookworm 64-bit 自带 Python 3.11）
+- `uv`（推荐）或 `pip`
+
+### 1. 获取代码
+
+```bash
+# 方式 A：直接 git clone
+git clone https://github.com/simonlin1212/tradingagents-astock.git ~/tradingagents-astock
+
+# 方式 B：从开发机 rsync（不含 .venv）
+rsync -a --exclude='.venv' --exclude='__pycache__' \
+  /path/to/TradingAgents-astock/ pi-hostname:~/tradingagents-astock/
+```
+
+### 2. 安装依赖
+
+MCP server 需要 `[mcp]` extra：
+
+```bash
+cd ~/tradingagents-astock
+uv venv && uv pip install -e '.[mcp]'
+```
+
+### 3. 配置 LLM
+
+在项目根目录创建 `.env`，填写你在 Pi 上使用的 API Key。
+**无头环境不需要 `claude_agent_sdk` 配置**，直接使用 API Key 计费模式即可：
+
+```bash
+# 推荐：DeepSeek（国内直连，低成本）
+DEEPSEEK_API_KEY=sk-xxx
+
+# 或者：智谱 GLM
+# ZHIPU_API_KEY=xxx
+```
+
+### 4. 注册到 MCP 客户端
+
+`tradingagents mcp-serve` 支持两种传输方式：
+
+**stdio（推荐，按需拉起，无需常驻进程）**
+
+```bash
+# 验证 MCP server 可正常启动
+.venv/bin/tradingagents mcp-serve --transport stdio
+# 输出无报错、等待输入即表示就绪（Ctrl+C 退出）
+```
+
+对于支持 stdio MCP 的客户端（如 PicoClaw），注册命令类似：
+
+```bash
+picoclaw mcp add tradingagents \
+  --transport stdio \
+  --command ~/tradingagents-astock/.venv/bin/tradingagents \
+  --args "mcp-serve --transport stdio"
+```
+
+**SSE（需要持久进程，适合多客户端共享）**
+
+```bash
+# 启动 HTTP+SSE server
+.venv/bin/tradingagents mcp-serve --transport sse --host 127.0.0.1 --port 8765
+```
+
+> ⚠️ v1 无鉴权：SSE 模式公网暴露请自行配置反向代理或 VPN。
+
+### 5. 可用 MCP 工具
+
+注册后 AI 助手可调用以下 6 个工具：
+
+| 工具 | 说明 | LLM 调用 |
+|------|------|----------|
+| `reports` | 列出可用研报 | 零 |
+| `kyc_questionnaire` | 返回 5 题投资者问卷 | 零 |
+| `scenario` | 查看某只股票的情景分布 | 零 |
+| `advise` | 个性化投资建议（基于情景 + KYC） | 零 |
+| `review` | 决策纪律巡检（止损/目标/期限） | 零 |
+| `analyze` | 触发新分析（`confirm=true` 才真正执行） | 分钟级 |
+
+前 5 个工具是**只读 + 零 LLM 调用**，秒级响应。`analyze` 工具会真正驱动多 Agent 流水线，需要数分钟和多次 LLM 调用。
+
+### 6. 数据目录
+
+分析结果和缓存默认写入 `~/.tradingagents/`（`expanduser` 自动解析），无需手动创建。
 
 ---
 
