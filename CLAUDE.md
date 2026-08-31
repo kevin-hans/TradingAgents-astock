@@ -35,6 +35,41 @@
 - `web/` — Streamlit Web UI
 - `cli/` — CLI 入口
 
+### 云端报告共享（v0.5.16+）
+`scenario.json` 可选上传/下载云端 bucket，让不同用户共享分析结果。
+`tradingagents/cloud/` 三层结构：
+
+- `base.py` — `CloudStore` **Protocol**（`runtime_checkable`，三方法契约
+  `is_configured` / `download_scenario` / `upload_scenario`）+
+  `scenario_object_key()` 命名约定
+- `r2.py` — `R2Store` 首个实现（Cloudflare R2 私有 bucket，需 `[cloud]` extra）
+- `__init__.py` — 工厂 `get_store() -> Optional[CloudStore]`：探测已配置的第一个后端
+
+**Caller 侧只 import 接口**：`from tradingagents.cloud import get_store`。
+未来加 S3 / OSS / MinIO 只需新增实现类 + 在工厂追加一分支，caller 无感。
+
+**三处触发点**：
+- `graph.finalize_graph_run()` 写完本地 `scenario.json` 后调 `get_store().upload_scenario()`
+- `advisor.scenario_io.load_scenario()` 本地未命中时调 `get_store().download_scenario()`
+- `cli.main.run_analysis_headless()` 跑分析前先查 cloud，命中则跳过 LLM
+  （返回 envelope 里 `source: "cloud"`，`llm_calls: 0`）
+
+**R2 实现的环境变量（四个都必须齐全才启用）**：
+- `TRADINGAGENTS_R2_ACCOUNT_ID`
+- `TRADINGAGENTS_R2_ACCESS_KEY_ID`
+- `TRADINGAGENTS_R2_SECRET_ACCESS_KEY`
+- `TRADINGAGENTS_R2_BUCKET`
+
+**装法**：`pip install -e '.[cloud]'`（加装 boto3）。
+
+**Object key 约定**（所有实现共用）：`{ticker}/{date}/scenario.json`。这个
+约定放在 `base.py` 里，避免各后端各自命名导致互相看不到对方存的文件。
+未来切换 R2 → S3 → OSS 时，同一个 key 可跨后端复用。
+
+⚠️ **所有云端调用都是尽力而为**——异常吞掉、返回 False，绝不上抛。本地
+`scenario.json` 才是真源，云端只是共享层。R2 未配置或 boto3 未装时，
+`get_store()` 返回 `None`，所有 caller 分支自动降级。
+
 ### 中文股票名解析链路
 用户/LLM 输入 → `safe_ticker_component` 检测中文 → `resolve_ticker()` → `_build_name_code_map()`（mootdx 全市场映射，缓存）→ 返回 6 位代码
 
