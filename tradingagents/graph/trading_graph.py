@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 from langgraph.prebuilt import ToolNode
 
+from tradingagents.cloud import get_store
 from tradingagents.llm_clients import create_llm_client
 
 from tradingagents.agents import *
@@ -771,6 +772,15 @@ class TradingAgentsGraph:
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
+
+        # 尽力而为通过 CloudStore 工厂上传（未配置或失败均不中断分析）。
+        try:
+            store = get_store()
+            if store is not None:
+                store.upload_scenario(safe_ticker, str(trade_date), path)
+        except Exception:
+            # 任何错误都吞掉——本地文件是真源，云端只是共享层。
+            pass
 
     def process_signal(self, full_signal):
         """Process a signal to extract the core decision."""

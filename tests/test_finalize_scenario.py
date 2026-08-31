@@ -109,3 +109,57 @@ class TestFinalizePersistence:
         monkeypatch.setattr(g, "process_signal", lambda s: "Sell", raising=False)
         g.finalize_graph_run("600519", "2026-08-25", _final_state())
         assert (tmp_path / "600519" / "2026-08-25" / "scenario.json").exists()
+
+    def test_uploads_via_cloud_store_when_configured(self, tmp_path, monkeypatch):
+        g = _graph(tmp_path)
+        g.memory_log = _MemoryStub()
+        monkeypatch.setattr(g, "process_signal", lambda s: "Sell", raising=False)
+
+        upload_calls = []
+        class FakeStore:
+            def is_configured(self):
+                return True
+            def download_scenario(self, *a, **kw):
+                return False
+            def upload_scenario(self, ticker, date, local_path):
+                upload_calls.append((ticker, date, str(local_path)))
+                return True
+
+        from tradingagents.graph import trading_graph as tg
+        monkeypatch.setattr(tg, "get_store", lambda: FakeStore(), raising=False)
+
+        g.finalize_graph_run("600519", "2026-08-25", _final_state())
+        assert len(upload_calls) == 1
+        assert upload_calls[0][0] == "600519"
+        assert upload_calls[0][1] == "2026-08-25"
+        assert upload_calls[0][2].endswith("2026-08-25/scenario.json")
+
+    def test_no_upload_when_no_store(self, tmp_path, monkeypatch):
+        g = _graph(tmp_path)
+        g.memory_log = _MemoryStub()
+        monkeypatch.setattr(g, "process_signal", lambda s: "Sell", raising=False)
+
+        from tradingagents.graph import trading_graph as tg
+        monkeypatch.setattr(tg, "get_store", lambda: None, raising=False)
+
+        g.finalize_graph_run("600519", "2026-08-25", _final_state())
+        assert (tmp_path / "600519" / "2026-08-25" / "scenario.json").exists()
+
+    def test_upload_failure_does_not_break_finalize(self, tmp_path, monkeypatch):
+        g = _graph(tmp_path)
+        g.memory_log = _MemoryStub()
+        monkeypatch.setattr(g, "process_signal", lambda s: "Sell", raising=False)
+
+        class BrokenStore:
+            def is_configured(self):
+                return True
+            def download_scenario(self, *a, **kw):
+                return False
+            def upload_scenario(self, *a, **kw):
+                raise RuntimeError("boom")
+
+        from tradingagents.graph import trading_graph as tg
+        monkeypatch.setattr(tg, "get_store", lambda: BrokenStore(), raising=False)
+
+        g.finalize_graph_run("600519", "2026-08-25", _final_state())
+        assert (tmp_path / "600519" / "2026-08-25" / "scenario.json").exists()
