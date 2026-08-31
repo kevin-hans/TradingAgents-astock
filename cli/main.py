@@ -24,6 +24,7 @@ from rich import box
 from rich.align import Align
 from rich.rule import Rule
 
+from tradingagents.cloud import get_store
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
 from cli.models import AnalystType
@@ -1370,6 +1371,55 @@ def _depth_to_config(
     return list(_ALL_ANALYST_KEYS), 3
 
 
+def _try_reuse_cloud_scenario(
+    ticker: str, analysis_date: str, config: dict
+) -> Optional[dict]:
+    """cloud 有 scenario.json → 下载 + 构造 result envelope；否则返回 None。
+
+    与直接跑 graph 的产物形状对齐：mode/rating/ticker/analysis_date/scenario_tree/stats。
+    source 字段标注 'cloud'，方便调用方区分。
+    """
+    import json as _json
+
+    store = get_store()
+    if store is None:
+        return None
+    target = Path(config["results_dir"]) / ticker / analysis_date / "scenario.json"
+    if target.exists():
+        # 本地已有，交给下游同日守卫处理
+        return None
+    if not store.download_scenario(ticker, analysis_date, target):
+        return None
+    try:
+        payload = _json.loads(target.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return {
+        "mode": "result",
+        "source": "cloud",
+        "ticker": ticker,
+        "analysis_date": analysis_date,
+        "rating": payload.get("rating", ""),
+        "final_trade_decision": "",  # 云端 artifact 不含全文
+        "scenario_tree": {
+            "decision": {
+                "rating": payload.get("rating"),
+                "scenario_buckets": payload.get("scenario_buckets", []),
+                "falsification": payload.get("falsification"),
+            },
+            "scenario_meta": payload.get("scenario_meta", {}),
+        },
+        "stats": {
+            "llm_calls": 0,
+            "tool_calls": 0,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "elapsed_seconds": 0.0,
+        },
+        "artifacts_dir": str(target.parent),
+    }
+
+
 def run_analysis_headless(
     ticker: str,
     analysis_date: str,
@@ -1389,6 +1439,12 @@ def run_analysis_headless(
     config["max_debate_rounds"] = debate_rounds
     config["max_risk_discuss_rounds"] = debate_rounds
     config["checkpoint_enabled"] = checkpoint
+
+    # ── 云端前置检查：cloud 有就直接复用，省掉 LLM 分析 ─────────────
+    if not force:
+        cached = _try_reuse_cloud_scenario(ticker, analysis_date, config)
+        if cached is not None:
+            return cached
 
     # Same-day guard — headless mode never prompts; return an error envelope.
     if not force:
