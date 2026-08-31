@@ -40,9 +40,14 @@ class TestFactory:
         assert get_store() is None
 
     def test_get_store_returns_r2_when_r2_configured(self, monkeypatch):
-        """需 Task 2 完成后才能通过——R2Store.is_configured 真检测 env vars。"""
-        import pytest
-        pytest.xfail("R2Store 尚未实现真实凭据检测（Task 2）")
+        monkeypatch.setenv("TRADINGAGENTS_R2_ACCOUNT_ID", "acc")
+        monkeypatch.setenv("TRADINGAGENTS_R2_ACCESS_KEY_ID", "id")
+        monkeypatch.setenv("TRADINGAGENTS_R2_SECRET_ACCESS_KEY", "key")
+        monkeypatch.setenv("TRADINGAGENTS_R2_BUCKET", "bucket")
+        from tradingagents.cloud import get_store
+        from tradingagents.cloud.r2 import R2Store
+        store = get_store()
+        assert isinstance(store, R2Store)
 
 
 class TestScenarioKeyConvention:

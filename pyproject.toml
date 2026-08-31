@@ -46,6 +46,7 @@ dependencies = [
 agentsdk = ["claude-agent-sdk>=0.2.82"]
 mcp = ["mcp>=2.1.0"]
 web = ["streamlit>=1.45.0", "fpdf2>=2.8.6"]
+cloud = ["boto3>=1.34.0"]
 dev = ["hypothesis>=6.0", "pytest>=7.0", "pytest-asyncio>=0.21"]
 
 [project.urls]
