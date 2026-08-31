@@ -70,6 +70,10 @@
 `scenario.json` 才是真源，云端只是共享层。R2 未配置或 boto3 未装时，
 `get_store()` 返回 `None`，所有 caller 分支自动降级。
 
+**Live smoke test（2026-08-31 通过）**：`stock-report` bucket +
+`600519/2026-08-30/scenario.json`（3462 bytes）上传/下载往返 byte-level 一致，
+不存在的 key 静默返回 False（非抛异常）——R2 全链路真机验证通链。
+
 ### 中文股票名解析链路
 用户/LLM 输入 → `safe_ticker_component` 检测中文 → `resolve_ticker()` → `_build_name_code_map()`（mootdx 全市场映射，缓存）→ 返回 6 位代码
 
