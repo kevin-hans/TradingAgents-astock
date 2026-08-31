@@ -20,7 +20,9 @@ DEFAULT_CONFIG = {
     # The CLI overrides this per provider when the user picks one. Keeping a
     # provider-specific URL here would leak (e.g. OpenAI's /v1 was previously
     # being forwarded to Gemini, producing malformed request URLs).
-    "backend_url": None,
+    # 无头 / MCP 部署可用 TRADINGAGENTS_BACKEND_URL 覆盖（例：智谱 Coding Plan
+    # 需切到 https://api.z.ai/api/coding/paas/v4，标准端点会报 1113 余额不足）。
+    "backend_url": os.getenv("TRADINGAGENTS_BACKEND_URL") or None,
     # 单次回复的最大输出 token 数。None = 用 provider 自己的默认值。
     # 报告写到一半就断，通常就是撞了这个上限（不是上下文超长）——把它调大即可（#91）。
     # 走 anthropic 通道跑**第三方模型**（Kimi 等）时尤其要注意：langchain-anthropic
