@@ -340,16 +340,23 @@ uv venv && uv pip install -e '.[mcp]'
 
 ### 3. 配置 LLM
 
-在项目根目录创建 `.env`，填写你在 Pi 上使用的 API Key。
-**无头环境不需要 `claude_agent_sdk` 配置**，直接使用 API Key 计费模式即可：
+在项目根目录创建 `.env`，填写你在 Pi 上使用的 API Key，并**通过环境变量把默认 provider 从 openai 切到你实际用的那家**（无头模式下 CLI 走 `DEFAULT_CONFIG`，不会像 Web/交互 CLI 那样问你选谁）：
 
 ```bash
 # 推荐：DeepSeek（国内直连，低成本）
 DEEPSEEK_API_KEY=sk-xxx
+TRADINGAGENTS_LLM_PROVIDER=deepseek
+TRADINGAGENTS_DEEP_THINK_LLM=deepseek-chat
+TRADINGAGENTS_QUICK_THINK_LLM=deepseek-chat
 
 # 或者：智谱 GLM
 # ZHIPU_API_KEY=xxx
+# TRADINGAGENTS_LLM_PROVIDER=glm
+# TRADINGAGENTS_DEEP_THINK_LLM=glm-4.6
+# TRADINGAGENTS_QUICK_THINK_LLM=glm-4.6
 ```
+
+> **无头环境不需要 `claude_agent_sdk` 配置**——那玩意要本机装 `claude` CLI 登录后才生效，Pi 上没有。直接走 API Key 计费即可。
 
 ### 4. 注册到 MCP 客户端
 
