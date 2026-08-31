@@ -358,6 +358,17 @@ TRADINGAGENTS_QUICK_THINK_LLM=deepseek-chat
 
 > **无头环境不需要 `claude_agent_sdk` 配置**——那玩意要本机装 `claude` CLI 登录后才生效，Pi 上没有。直接走 API Key 计费即可。
 
+**其他可选环境变量**：
+
+```bash
+# 智谱 GLM Coding Plan 订阅套餐必须走专用端点（标准端点会报 1113 余额不足）
+# TRADINGAGENTS_BACKEND_URL=https://api.z.ai/api/coding/paas/v4
+
+# analyze CLI subprocess 超时（秒，默认 900）。Pi 3B 跑 --depth full 常超过
+# 15 min（GLM/reasoning 模型尤其慢），建议设 3600 或更大。
+# TRADINGAGENTS_CLI_TIMEOUT=3600
+```
+
 ### 4. 注册到 MCP 客户端
 
 `tradingagents mcp-serve` 支持两种传输方式：

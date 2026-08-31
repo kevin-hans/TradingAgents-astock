@@ -67,13 +67,18 @@ def _subprocess_env() -> dict[str, str]:
     return env
 
 
-async def run_cli(argv: list[str], timeout: float = 900.0) -> CLIResult:
+async def run_cli(argv: list[str], timeout: float | None = None) -> CLIResult:
     """跑 tradingagents <argv>，解析 stdout JSON。
 
     - returncode=0 + stdout 合法 JSON → CLIResult(ok=True, data=...)
     - 非零 exit → 走 map_cli_error（优先 stdout，为空回退 stderr）
     - 超时 → kill + CLIResult(ok=False, error=timeout)
+
+    timeout 缺省从环境变量 TRADINGAGENTS_CLI_TIMEOUT 读取（秒），未设置则 900s。
+    Pi 3B 跑 --depth full 常超过 15 min，可调到 3600s+。
     """
+    if timeout is None:
+        timeout = float(os.getenv("TRADINGAGENTS_CLI_TIMEOUT", "900"))
     cmd = _resolve_binary() + list(argv)
     proc = await asyncio.create_subprocess_exec(
         *cmd,
