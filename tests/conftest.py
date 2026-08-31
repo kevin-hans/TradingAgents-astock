@@ -64,7 +64,7 @@ def tmp_artifacts_env(tmp_path):
     TRADINGAGENTS_PROFILE also points to a nonexistent path so advise-without-kyc
     deterministically returns kyc_required regardless of the host machine's profile.
     """
-    src = os.path.expanduser("~/.tradingagents/logs/600519")
+    src = Path(__file__).parent / "fixtures" / "600519"
     dst = tmp_path / "logs" / "600519"
     shutil.copytree(src, dst)
     results_dir = str(tmp_path / "logs")
