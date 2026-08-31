@@ -156,7 +156,8 @@ class TestScenarioEndToEnd:
         import json as _json
         reports = tmp_path / "reports"
         reports.mkdir()
-        (reports / "scenario_000001_2026-08-30.json").write_text(_json.dumps({
+        (reports / "000001" / "2026-08-30").mkdir(parents=True, exist_ok=True)
+        (reports / "000001" / "2026-08-30" / "scenario.json").write_text(_json.dumps({
             "version": 1, "ticker": "000001", "trade_date": "2026-08-30",
             "rating": "Buy",
             "scenario_buckets": [{

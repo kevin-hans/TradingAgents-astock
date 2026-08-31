@@ -174,7 +174,9 @@ class TestRunReview:
 
     def _write_artifact(self, reports: Path, ticker="000001",
                         date_str="2026-08-01", stop=9.0, target=12.0):
-        (reports / f"scenario_{ticker}_{date_str}.json").write_text(json.dumps({
+        d = reports / ticker / date_str
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "scenario.json").write_text(json.dumps({
             "version": 1, "ticker": ticker, "trade_date": date_str, "rating": "Buy",
             "scenario_buckets": [{
                 "horizon_months": 6,

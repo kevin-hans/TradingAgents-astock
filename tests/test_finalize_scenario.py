@@ -64,7 +64,7 @@ class TestFinalizePersistence:
         g.memory_log = _MemoryStub()
         monkeypatch.setattr(g, "process_signal", lambda s: "Sell", raising=False)
         g.finalize_graph_run("600519", "2026-08-25", _final_state())
-        art = tmp_path / "600519" / "TradingAgentsStrategy_logs" / "scenario_600519_2026-08-25.json"
+        art = tmp_path / "600519" / "2026-08-25" / "scenario.json"
         assert art.exists()
         payload = json.loads(art.read_text())
         assert payload["version"] == 1
@@ -80,16 +80,15 @@ class TestFinalizePersistence:
         g.memory_log = _MemoryStub()
         monkeypatch.setattr(g, "process_signal", lambda s: "Sell", raising=False)
         g.finalize_graph_run("600519", "2026-08-25", _final_state(with_tree=False))
-        log_dir = tmp_path / "600519" / "TradingAgentsStrategy_logs"
-        fresh = [p for p in log_dir.glob("scenario_*.json") if "archived" not in p.name]
-        assert fresh == []
+        log_dir = tmp_path / "600519" / "2026-08-25"
+        assert not (log_dir / "scenario.json").exists()
 
     def test_full_states_log_contains_scenario_tree(self, tmp_path, monkeypatch):
         g = _graph(tmp_path)
         g.memory_log = _MemoryStub()
         monkeypatch.setattr(g, "process_signal", lambda s: "Sell", raising=False)
         g.finalize_graph_run("600519", "2026-08-25", _final_state())
-        log = json.loads((tmp_path / "600519" / "TradingAgentsStrategy_logs" / "full_states_log_2026-08-25.json").read_text())
+        log = json.loads((tmp_path / "600519" / "2026-08-25" / "full_states_log.json").read_text())
         assert log["scenario_tree"]["decision"]["rating"] == "Underweight"
 
     def test_rerun_archives_old_log_and_artifact(self, tmp_path, monkeypatch):
@@ -98,15 +97,15 @@ class TestFinalizePersistence:
         monkeypatch.setattr(g, "process_signal", lambda s: "Sell", raising=False)
         g.finalize_graph_run("600519", "2026-08-25", _final_state())
         g.finalize_graph_run("600519", "2026-08-25", _final_state())
-        log_dir = tmp_path / "600519" / "TradingAgentsStrategy_logs"
-        assert len(list(log_dir.glob("full_states_log_2026-08-25.archived-*.json"))) == 1
-        assert len(list(log_dir.glob("scenario_600519_2026-08-25.archived-*.json"))) == 1
-        assert (log_dir / "full_states_log_2026-08-25.json").exists()
-        assert (log_dir / "scenario_600519_2026-08-25.json").exists()
+        log_dir = tmp_path / "600519" / "2026-08-25"
+        assert len(list(log_dir.glob("full_states_log.archived-*.json"))) == 1
+        assert len(list(log_dir.glob("scenario.archived-*.json"))) == 1
+        assert (log_dir / "full_states_log.json").exists()
+        assert (log_dir / "scenario.json").exists()
 
     def test_checkpoint_config_absent_does_not_break(self, tmp_path, monkeypatch):
         g = _graph(tmp_path)  # config has no checkpoint_enabled key
         g.memory_log = _MemoryStub()
         monkeypatch.setattr(g, "process_signal", lambda s: "Sell", raising=False)
         g.finalize_graph_run("600519", "2026-08-25", _final_state())
-        assert (tmp_path / "600519" / "TradingAgentsStrategy_logs" / "scenario_600519_2026-08-25.json").exists()
+        assert (tmp_path / "600519" / "2026-08-25" / "scenario.json").exists()

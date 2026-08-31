@@ -34,12 +34,11 @@ def get_history() -> list[dict[str, str]]:
         return []
 
     entries: list[dict[str, str]] = []
-    for log_file in root.rglob("full_states_log_*.json"):
-        match = re.search(r"full_states_log_(\d{4}-\d{2}-\d{2})\.json$", log_file.name)
-        if not match:
-            continue
-        date = match.group(1)
+    for log_file in root.rglob("full_states_log.json"):
+        date = log_file.parent.name
         ticker = log_file.parent.parent.name
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            continue
         entries.append({"ticker": ticker, "date": date, "path": str(log_file)})
 
     entries.sort(key=lambda e: e["date"], reverse=True)

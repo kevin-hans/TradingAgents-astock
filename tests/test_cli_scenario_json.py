@@ -13,7 +13,9 @@ def tmp_reports(tmp_path: Path):
 
 
 def _write_scenario(reports: Path, ticker="000001", date="2026-08-30"):
-    (reports / f"scenario_{ticker}_{date}.json").write_text(json.dumps({
+    d = reports / ticker / date
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "scenario.json").write_text(json.dumps({
         "version": 1, "ticker": ticker, "trade_date": date, "rating": "Buy",
         "scenario_buckets": [{
             "horizon_months": 6,

@@ -20,12 +20,12 @@ def test_force_flag_exposed_on_bare_callback():
 
 
 def test_existing_artifacts_detects_log_and_scenario(tmp_path):
-    log_dir = tmp_path / "600519" / "TradingAgentsStrategy_logs"
+    log_dir = tmp_path / "600519" / "2026-08-25"
     log_dir.mkdir(parents=True)
-    (log_dir / "full_states_log_2026-08-25.json").touch()
+    (log_dir / "full_states_log.json").touch()
     found = existing_artifacts(str(tmp_path), "600519", "2026-08-25")
     assert any("full_states_log" in p.name for p in found)
-    (log_dir / "scenario_600519_2026-08-25.json").touch()
+    (log_dir / "scenario.json").touch()
     found = existing_artifacts(str(tmp_path), "600519", "2026-08-25")
     assert len(found) == 2
 

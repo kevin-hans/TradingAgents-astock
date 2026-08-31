@@ -28,6 +28,7 @@
 原版 4 个（市场/情绪/新闻/基本面）+ A 股特化 3 个（政策分析师/游资追踪/解禁监控）
 
 ### 关键路径
+- `~/.tradingagents/logs/{ticker}/{date}/` — 分析产物统一落盘目录：`full_states_log.json`（Web 历史）、`scenario.json`（Advisor 引擎）、`reports/*.md`（分析师报告，CLI 专用）；归档文件后缀 `.archived-{stamp}.json`
 - `tradingagents/dataflows/a_stock.py` — A 股数据 vendor，所有数据获取入口
 - `tradingagents/dataflows/utils.py` — `safe_ticker_component` 路径安全校验 + 中文 ticker 自动解析
 - `tradingagents/agents/` — 7 个 Analyst + Bull/Bear 辩论逻辑

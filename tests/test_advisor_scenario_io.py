@@ -38,7 +38,9 @@ def _write_scenario(reports: Path, ticker: str, date: str, mu: float = 0.05) -> 
         ],
         "falsification": {"conditions": ["cond1"]},
     }
-    p = reports / f"scenario_{ticker}_{date}.json"
+    d = reports / ticker / date
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / "scenario.json"
     p.write_text(json.dumps(payload), encoding="utf-8")
     return p
 
@@ -65,11 +67,9 @@ class TestLoadScenario:
         with pytest.raises(ScenarioNotFoundError):
             load_scenario("000001", date="2020-01-01")
 
-    def test_load_from_p1_nested_path(self, tmp_reports: Path):
-        """P1 实际落盘在 {results_dir}/{ticker}/TradingAgentsStrategy_logs/ 下——rglob 应能找到。"""
-        nested = tmp_reports / "000001" / "TradingAgentsStrategy_logs"
-        nested.mkdir(parents=True)
-        _write_scenario(nested, "000001", "2026-08-30")
+    def test_load_from_standard_path(self, tmp_reports: Path):
+        """正式路径 {results_dir}/{ticker}/{date}/scenario.json 可被找到。"""
+        _write_scenario(tmp_reports, "000001", "2026-08-30")
         art = load_scenario("000001")
         assert art.trade_date == "2026-08-30"
 
@@ -91,6 +91,6 @@ class TestListScenarios:
 
     def test_ignore_archived(self, tmp_reports: Path):
         _write_scenario(tmp_reports, "000001", "2026-08-30")
-        (tmp_reports / "scenario_000001_2026-08-30.archived-20260828-120000.json").touch()
+        (tmp_reports / "000001" / "2026-08-30" / "scenario.archived-20260828-120000.json").touch()
         entries = list_scenarios(ticker="000001")
         assert len(entries) == 1

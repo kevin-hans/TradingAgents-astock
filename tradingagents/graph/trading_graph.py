@@ -733,14 +733,14 @@ class TradingAgentsGraph:
         # Save to file. Reject ticker values that would escape the
         # results directory when joined as a path component.
         safe_ticker = safe_ticker_component(self.ticker)
-        directory = Path(self.config["results_dir"]) / safe_ticker / "TradingAgentsStrategy_logs"
+        directory = Path(self.config["results_dir"]) / safe_ticker / str(trade_date)
         directory.mkdir(parents=True, exist_ok=True)
 
-        log_path = directory / f"full_states_log_{trade_date}.json"
+        log_path = directory / "full_states_log.json"
         if log_path.exists():
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             log_path.rename(
-                log_path.with_name(f"full_states_log_{trade_date}.archived-{stamp}.json")
+                log_path.with_name(f"full_states_log.archived-{stamp}.json")
             )
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump(self.log_states_dict[str(trade_date)], f, indent=4)
@@ -751,17 +751,13 @@ class TradingAgentsGraph:
         if not tree or not tree.get("decision", {}).get("scenario_buckets"):
             return
         safe_ticker = safe_ticker_component(company_name)
-        directory = (
-            Path(self.config["results_dir"]) / safe_ticker / "TradingAgentsStrategy_logs"
-        )
+        directory = Path(self.config["results_dir"]) / safe_ticker / str(trade_date)
         directory.mkdir(parents=True, exist_ok=True)
-        path = directory / f"scenario_{safe_ticker}_{trade_date}.json"
+        path = directory / "scenario.json"
         if path.exists():
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             path.rename(
-                path.with_name(
-                    f"scenario_{safe_ticker}_{trade_date}.archived-{stamp}.json"
-                )
+                path.with_name(f"scenario.archived-{stamp}.json")
             )
         payload = {
             "version": 1,

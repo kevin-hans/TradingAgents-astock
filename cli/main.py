@@ -845,13 +845,10 @@ def update_research_team_status(status):
 # Ordered list of analysts for status transitions
 def existing_artifacts(results_dir: str, ticker: str, analysis_date: str) -> list:
     """Full-state log / scenario artifact already present for (ticker, date)?"""
-    log_dir = Path(results_dir) / ticker / "TradingAgentsStrategy_logs"
+    log_dir = Path(results_dir) / ticker / analysis_date
     if not log_dir.exists():
         return []
-    names = (
-        f"full_states_log_{analysis_date}.json",
-        f"scenario_{ticker}_{analysis_date}.json",
-    )
+    names = ("full_states_log.json", "scenario.json")
     return [log_dir / n for n in names if (log_dir / n).exists()]
 
 

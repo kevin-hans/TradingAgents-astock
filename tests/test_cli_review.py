@@ -80,7 +80,9 @@ class TestReviewCLI:
     def test_fake_quotes_empty_exit_6(self, tmp_env):
         """fake 行情为空 dict → quote_failed → exit 6（制品存在才能走到行情检查）。"""
         _write_pending(tmp_env["log"])
-        (tmp_env["reports"] / "scenario_000001_2026-08-01.json").write_text(json.dumps({
+        _d = tmp_env["reports"] / "000001" / "2026-08-01"
+        _d.mkdir(parents=True, exist_ok=True)
+        (_d / "scenario.json").write_text(json.dumps({
             "version": 1, "ticker": "000001", "trade_date": "2026-08-01",
             "rating": "Buy",
             "scenario_buckets": [{
@@ -103,7 +105,9 @@ class TestReviewCLI:
     def test_fake_quotes_full_check(self, tmp_env):
         """制品 + fake 行情止损价 → 完整检查路径 + w* hint。"""
         _write_pending(tmp_env["log"])
-        (tmp_env["reports"] / "scenario_000001_2026-08-01.json").write_text(json.dumps({
+        _d2 = tmp_env["reports"] / "000001" / "2026-08-01"
+        _d2.mkdir(parents=True, exist_ok=True)
+        (_d2 / "scenario.json").write_text(json.dumps({
             "version": 1, "ticker": "000001", "trade_date": "2026-08-01",
             "rating": "Buy",
             "scenario_buckets": [{

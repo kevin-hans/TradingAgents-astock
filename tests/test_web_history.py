@@ -41,9 +41,9 @@ def test_incomplete_task_round_trip(tmp_path, monkeypatch):
 def test_completed_history_hides_incomplete_task(tmp_path, monkeypatch):
     index = tmp_path / "incomplete_tasks.json"
     logs = tmp_path / "logs"
-    log_dir = logs / "600370" / "TradingAgentsStrategy_logs"
+    log_dir = logs / "600370" / "2026-06-02"
     log_dir.mkdir(parents=True)
-    (log_dir / "full_states_log_2026-06-02.json").write_text(
+    (log_dir / "full_states_log.json").write_text(
         json.dumps({"final_trade_decision": "HOLD"}),
         encoding="utf-8",
     )

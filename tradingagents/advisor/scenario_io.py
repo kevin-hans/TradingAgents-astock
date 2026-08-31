@@ -1,4 +1,4 @@
-"""P1 scenario_<ticker>_<date>.json 读侧。归档文件 (.archived-*) 跳过。"""
+"""scenario.json 读侧。归档文件 (.archived-*) 被 glob 精确匹配自动过滤。"""
 import os
 import re
 from pathlib import Path
@@ -8,9 +8,7 @@ from pydantic import BaseModel
 from tradingagents.agents.schemas import Falsification, ScenarioBucket
 
 
-_FILENAME_RE = re.compile(
-    r"^scenario_(?P<ticker>[^_]+)_(?P<date>\d{4}-\d{2}-\d{2})\.json$"
-)
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 class ScenarioNotFoundError(FileNotFoundError):
@@ -64,12 +62,11 @@ def list_scenarios(ticker: str | None = None) -> list[ScenarioIndexEntry]:
     if not directory.exists():
         return []
     entries: list[ScenarioIndexEntry] = []
-    for path in directory.rglob("scenario_*.json"):  # 递归扫，兼容 P1 嵌套路径
-        m = _FILENAME_RE.match(path.name)
-        if not m:
+    for path in directory.rglob("scenario.json"):
+        d = path.parent.name
+        t = path.parent.parent.name
+        if not _DATE_RE.match(d):
             continue
-        t = m.group("ticker")
-        d = m.group("date")
         if ticker is not None and t != ticker:
             continue
         entries.append(ScenarioIndexEntry(ticker=t, trade_date=d, path=str(path)))
