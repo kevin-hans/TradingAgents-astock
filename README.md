@@ -381,7 +381,53 @@ picoclaw mcp add tradingagents \
 
 > ⚠️ v1 无鉴权：SSE 模式公网暴露请自行配置反向代理或 VPN。
 
-### 5. 可用 MCP 工具
+#### 用 systemd 常驻化（生产推荐）
+
+`/etc/systemd/system/tradingagents-mcp.service`：
+
+```ini
+[Unit]
+Description=TradingAgents MCP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<你的用户名>
+WorkingDirectory=/home/<你的用户名>/tradingagents-astock
+ExecStart=/home/<你的用户名>/tradingagents-astock/.venv/bin/tradingagents mcp-serve --transport sse --host 127.0.0.1 --port 8765
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now tradingagents-mcp
+sudo systemctl status tradingagents-mcp
+```
+
+MCP 客户端把 URL 指向 `http://127.0.0.1:8765/mcp` 即可。
+
+### 5. 常见部署问题排错
+
+**Q: 装 systemd 服务后，MCP 客户端调用返回 `ModuleNotFoundError: No module named 'typer'`？**
+先前用 `nohup` / `&` 起过临时测试进程没 kill 掉，占着端口导致 systemd 服务实际每次重启都失败（`address already in use`），但 `Restart=on-failure` 每 5 秒重启一次，`systemctl status` 表面上显示"active (running)"（其实是刚起又要死的短命进程）；MCP 客户端打到的是那个僵尸测试进程（旧代码）。
+
+排查三步：
+```bash
+ss -tlnp | grep <端口>           # 看谁在占端口
+sudo journalctl -u tradingagents-mcp -n 50   # 找 "already in use" 或 "Restart counter is at N"
+ps -ef | grep tradingagents     # 找出所有实例
+```
+kill 掉多余的实例后 `sudo systemctl restart tradingagents-mcp` 即可。
+
+**Q: 直接跑 `.venv/bin/tradingagents mcp-serve` 正常，装 systemd 后 subprocess 报 `ModuleNotFoundError`？**
+0.5.16 之前的版本有此 bug——Debian/Ubuntu 系（含 Raspberry Pi OS）用 uv/venv 建的环境，`.venv/bin/python` 是指向 `/usr/bin/python3` 的绝对 symlink；kernel 解析 shebang 后 `sys.executable`/`sys.prefix` 均落在系统 Python 位置，venv 上下文丢失，spawn 出去的 CLI subprocess 找不到 venv 里的包。0.5.16+ 已修（`_subprocess_env()` 从 `__file__` 上溯 `.venv` 显式注入 PYTHONPATH），升级即可。
+
+### 6. 可用 MCP 工具
 
 注册后 AI 助手可调用以下 6 个工具：
 
@@ -396,7 +442,7 @@ picoclaw mcp add tradingagents \
 
 前 5 个工具是**只读 + 零 LLM 调用**，秒级响应。`analyze` 工具会真正驱动多 Agent 流水线，需要数分钟和多次 LLM 调用。
 
-### 6. 数据目录
+### 7. 数据目录
 
 分析结果和缓存默认写入 `~/.tradingagents/`（`expanduser` 自动解析），无需手动创建。
 
