@@ -5,7 +5,9 @@ CLAUDE.md 薄壳方针：本文件只 import stdlib + 本包 errors。禁业务�
 import asyncio
 import json
 import shutil
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
 from tradingagents.mcp.errors import CLIError, MCP_ERROR_INTERNAL, map_cli_error
@@ -19,11 +21,21 @@ class CLIResult:
 
 
 def _resolve_binary() -> list[str]:
-    """定位 tradingagents 可执行；缺失回退 python -m cli.main。"""
+    """定位 tradingagents 可执行。
+
+    优先级：
+    1. 与当前解释器同 bin 目录的 tradingagents（venv 内部署时 systemd PATH 不含 venv/bin）
+    2. PATH 搜索（本地开发 / 激活 venv 场景）
+    3. 当前解释器跑 cli.main 模块（兜底）
+    """
+    venv_bin = Path(sys.executable).parent
+    venv_script = venv_bin / "tradingagents"
+    if venv_script.exists():
+        return [str(venv_script)]
     which = shutil.which("tradingagents")
     if which:
         return [which]
-    return ["python", "-m", "cli.main"]
+    return [sys.executable, "-m", "cli.main"]
 
 
 async def run_cli(argv: list[str], timeout: float = 900.0) -> CLIResult:
