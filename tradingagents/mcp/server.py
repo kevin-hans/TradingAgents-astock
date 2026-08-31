@@ -43,10 +43,12 @@ def list_tools_spec() -> list[Tool]:
         Tool(
             name="advise",
             description=(
-                "个性化投资建议。优先带 kyc_answers（5 题答案 inline 传）；"
-                "用户没答过问卷时先调 kyc_questionnaire 拿题问用户再重调本工具。"
-                "省略 kyc_answers 则用已存档画像，无存档返回 kyc_required"
-                "（payload 内嵌问卷，问完用户带答案重调）。秒级只读。"
+                "个性化投资建议。**每次调用 ticker 必填（含拿到 kyc_required 后带答案重调时）**"
+                "——常见错误：第二次调用只填 kyc_answers 忘了 ticker，会被 schema 拦下。"
+                "优先带 kyc_answers（5 题答案 inline 传）；用户没答过问卷时先调 "
+                "kyc_questionnaire 拿题问用户再重调本工具。省略 kyc_answers 则用已存档画像，"
+                "无存档返回 kyc_required（payload 内嵌问卷 + 回显 ticker，问完用户带答案重调"
+                "**同时带上响应里回显的 ticker**）。秒级只读。"
             ),
             input_schema=AdviseArgs.model_json_schema(),
         ),

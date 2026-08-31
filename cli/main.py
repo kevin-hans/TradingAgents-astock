@@ -1713,9 +1713,13 @@ def advise(
         try:
             answers = read_profile()
         except ProfileNotFoundError:
+            # 回显 ticker：MCP 宿主模型拿到 kyc_required 后重调本工具时，容易
+            # 只填 kyc_answers 忘了 ticker（tool-call arg drop）。把 ticker 放进
+            # payload，让模型看到 "ticker": "..." 时能想起来第二次调用要带上。
             _emit({
                 "error": "kyc_required",
                 "message": "需要先建立投资者画像（5 题问卷）；或用 --kyc-json / --assume-neutral",
+                "ticker": ticker,
                 "questionnaire": get_questionnaire().model_dump(),
             }, exit_code=3)
         try:
