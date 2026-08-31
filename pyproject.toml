@@ -33,8 +33,6 @@ dependencies = [
     "tqdm>=4.67.1",
     "typing-extensions>=4.14.0",
     "yfinance>=0.2.63",
-    "streamlit>=1.45.0",
-    "fpdf2>=2.8.6",
     "python-dotenv>=1.1.0",
     # 0.11.7 是首个兼容 pandas>=2.3 的版本；放宽到 0.10.x 会让 uv 回溯到
     # 要求 pandas<1.3.5 的远古版本，报出与真实成因无关的 pandas 冲突（#87）。
@@ -47,6 +45,7 @@ dependencies = [
 # httpx<0.26 无冲突（已 uv lock 实测）——与 #87 移除的 [google] 情况不同。
 agentsdk = ["claude-agent-sdk>=0.2.82"]
 mcp = ["mcp>=2.1.0"]
+web = ["streamlit>=1.45.0", "fpdf2>=2.8.6"]
 dev = ["hypothesis>=6.0", "pytest>=7.0", "pytest-asyncio>=0.21"]
 
 [project.urls]

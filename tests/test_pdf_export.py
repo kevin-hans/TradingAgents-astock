@@ -3,9 +3,13 @@
 from pathlib import Path
 
 import pytest
-from fpdf.enums import WrapMode
 
-from web.pdf_export import (
+pytest.importorskip("fpdf", reason="需要 [web] extra：pip install -e '.[web]'")
+pytest.importorskip("streamlit", reason="需要 [web] extra：pip install -e '.[web]'")
+
+from fpdf.enums import WrapMode  # noqa: E402
+
+from web.pdf_export import (  # noqa: E402
     PDFExportError,
     _ReportPDF,
     _compact_inline_text,

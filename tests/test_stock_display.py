@@ -1,9 +1,11 @@
 """Tests for web stock display labels."""
 
+import pytest
 import web.stock_display as stock_display
 
 
 def test_generate_markdown_uses_display_label(monkeypatch):
+    pytest.importorskip("fpdf", reason="需要 [web] extra：pip install -e '.[web]'")
     from web.pdf_export import generate_markdown
 
     monkeypatch.setattr(stock_display, "resolve_stock_name", lambda ticker: None)
