@@ -24,12 +24,12 @@ def _resolve_binary() -> list[str]:
     """定位 tradingagents 可执行。
 
     优先级：
-    1. 与当前解释器同 bin 目录的 tradingagents（venv 内部署时 systemd PATH 不含 venv/bin）
+    1. sys.prefix/bin/tradingagents（venv 内部署首选；sys.prefix 不受 symlink 影响，
+       而 sys.executable 在 venv 用 symlink 指向系统 Python 时会解析到 /usr/bin/python3.x）
     2. PATH 搜索（本地开发 / 激活 venv 场景）
     3. 当前解释器跑 cli.main 模块（兜底）
     """
-    venv_bin = Path(sys.executable).parent
-    venv_script = venv_bin / "tradingagents"
+    venv_script = Path(sys.prefix) / "bin" / "tradingagents"
     if venv_script.exists():
         return [str(venv_script)]
     which = shutil.which("tradingagents")
